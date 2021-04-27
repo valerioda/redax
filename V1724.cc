@@ -225,11 +225,11 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
   do{
 
     // Reserve space for this block transfer
-    thisBLT = new char32_t[alloc_words];
+    thisBLT = new char32_t[alloc_words << count];
 
     ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress,
 				     ((unsigned char*)thisBLT),
-				     BLT_SIZE, cvA32_U_MBLT, cvD64, &nb);
+				     BLT_SIZE << count, cvA32_U_MBLT, cvD64, &nb);
     if( (ret != cvSuccess) && (ret != cvBusError) ){
       fLog->Entry(MongoLog::Error,
 		  "Board %i read error after %i reads: (%i) and transferred %i bytes this read",
@@ -240,9 +240,9 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
       for (auto& b : xfer_buffers) delete[] b.first;
       return -1;
     }
-    if (nb > BLT_SIZE) fLog->Entry(MongoLog::Message,
+    if (nb > (BLT_SIZE<<count)) fLog->Entry(MongoLog::Message,
         "Board %i got %i more bytes than asked for (headroom %i)",
-        fBID, nb-BLT_SIZE, alloc_words*sizeof(char32_t)-nb);
+        fBID, nb-(BLT_SIZE<<count), (alloc_words*sizeof(char32_t)<<count)-nb);
 
     count++;
     blt_words+=nb/sizeof(char32_t);
