@@ -52,7 +52,6 @@ class V1724{
   virtual bool EnsureStopped(int ntries, int sleep);
   virtual int CheckErrors();
   virtual uint32_t GetAcquisitionStatus();
-  virtual int ResetClocks();
 
 protected:
   // Some values for base classes to override 
@@ -73,7 +72,7 @@ protected:
   unsigned int fBoardErrRegister;
 
   int BLT_SIZE;
-  std::map<int, long> fBLTCounter;
+  std::map<int, int> fBLTCounter;
 
   bool MonitorRegister(uint32_t reg, uint32_t mask, int ntries, int sleep, uint32_t val=1);
   virtual std::tuple<uint32_t, long> GetClockInfo(std::u32string_view);

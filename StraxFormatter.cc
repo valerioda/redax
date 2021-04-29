@@ -319,11 +319,11 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
   struct timespec comp_start, comp_end;
   clock_gettime(CLOCK_THREAD_CPUTIME_ID, &comp_start);
 
-  std::vector<std::list<std::string>*> buffers{{&fChunks[chunk_i], &fOverlaps[chunk_i]}};
-  std::vector<long> uncompressed_size(3, 0);
+  std::list<std::string>* buffers[2] = {&fChunks[chunk_i], &fOverlaps[chunk_i]};
+  long uncompressed_size[3] = {0L, 0L, 0L};
   std::string uncompressed;
-  std::vector<std::shared_ptr<std::string>> out_buffer(3);
-  std::vector<int> wsize(3);
+  std::shared_ptr<std::string> out_buffer[3];
+  int wsize[3];
   long max_compressed_size = 0;
 
   for (int i = 0; i < 2; i++) {

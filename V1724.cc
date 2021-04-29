@@ -227,8 +227,7 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
     // Reserve space for this block transfer
     thisBLT = new char32_t[alloc_words << count];
 
-    ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress,
-				     ((unsigned char*)thisBLT),
+    ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress, thisBLT,
 				     BLT_SIZE << count, cvA32_U_MBLT, cvD64, &nb);
     if( (ret != cvSuccess) && (ret != cvBusError) ){
       fLog->Entry(MongoLog::Error,
@@ -265,7 +264,7 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
     for (auto& xfer : xfer_buffers) {
       s.append(xfer.first, xfer.second);
     }
-    fBLTCounter[count]++;
+    fBLTCounter[int(std::ceil(std::log2(blt_words)))]++;
     auto [ht, cc] = GetClockInfo(s);
     outptr = std::make_unique<data_packet>(std::move(s), ht, cc);
   }

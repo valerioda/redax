@@ -209,6 +209,7 @@ void DAQController::ReadData(int link){
   std::vector<int> mutex_wait_times;
   int words = 0;
   int local_size(0);
+  int transfer_batch = fOptions->GetInt("transfer_batch", 16);
   fRunning[link] = true;
   std::chrono::microseconds sleep_time(fOptions->GetInt("us_between_reads", 10));
   while(fReadLoop){
@@ -232,8 +233,7 @@ void DAQController::ReadData(int link){
             fLog->Entry(MongoLog::Local, "Board %i has PLL unlock", digi->bid());
             fPLL++;
           }
-          if (err_val & 0x2) fLog->Entry(MongoLog::Local, "Board %i has VME bus error",
-                                         digi->bid());
+          if (err_val & 0x2) fLog->Entry(MongoLog::Local, "Board %i has VME bus error", digi->bid());
         }
       }
       if((words = digi->Read(dp))<0){
@@ -246,7 +246,7 @@ void DAQController::ReadData(int link){
         local_size += words*sizeof(char32_t);
       }
     } // for digi in digitizers
-    if (local_buffer.size() > 0) {
+    if (local_buffer.size() >= transfer_batch) {
       fDataRate += local_size;
       int selector = (fCounter++)%fNProcessingThreads;
       auto t_start = std::chrono::high_resolution_clock::now();
