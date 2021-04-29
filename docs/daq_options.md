@@ -289,7 +289,7 @@ Redax accepts a variety of options that control various low-level operations. Th
 
 | Option | Description |
 | ---- | ---- |
-| baseline_max_steps | Int. The maximum number of steps during baselining. Steps involve measuring the baseline and trying to adjust it towards the target value. Default 20. |
+| baseline_max_steps | Int. The maximum number of steps during baselining. Steps involve measuring the baseline and trying to adjust it towards the target value. Default 30. |
 | baseline_adjustment_threshold | Int. How close the measured baseline must be to the target baseline in ADC units. If the absolute difference is less than this value, a channel is considered to have converged. Default 10. |
 | baselie_convergence_threshold | Int. How many consecutive times a channel must be within the adjustment threshold to be considered stable and finished. Default 3. |
 | baseline_min_adjustment | Int. The minimum change to the DAC value, given in DAC units. Note that the DAC is 16-bit while the digitizer is only 14-bit, so a conversion of approximately 0.25 does apply. Default 10. |
@@ -302,4 +302,5 @@ Redax accepts a variety of options that control various low-level operations. Th
 | blt_safety_factor | Float. Sometimes the digitizer returns more bytes during a BLT readout than you ask for (it depends on the number and size of events in the digitizer's memory). This value is how much extra memory to allocate so you don't overrun the readout buffer. Default 1.5. |
 | do_sn_check | 0/1. Whether or not to have each board check its serial number during initialization. Default 0. |
 | us_between_reads | Int. How many microseconds to sleep between polling digitizers for data. This has a major performance impact that will matter when under extremely high loads (ie, the bleeding edge of what your server(s) and boards are capable of), but otherwise shouldn't matter much. Default 10. |
+| transfer_batch | Int. How many data packets to accumulate in one readout thread before passing off to a processing thread. Default 16. |
 

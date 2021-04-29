@@ -123,11 +123,6 @@ bool V1724::EnsureStopped(int ntries, int tsleep){
 uint32_t V1724::GetAcquisitionStatus(){
   return ReadRegister(fAqStatusRegister);
 }
-int V1724::ResetClocks() {
-  fRolloverCounter = 0;
-  fLastClock = 0;
-  return WriteRegister(fClearRegister, 0x1);
-}
 int V1724::CheckErrors(){
   auto pll = ReadRegister(fBoardFailStatRegister);
   auto ros = ReadRegister(fReadoutStatusRegister);

@@ -209,7 +209,7 @@ void DAQController::ReadData(int link){
   std::vector<int> mutex_wait_times;
   mutex_wait_times.reserve(1<<20);
   int words = 0;
-  int transfer_batch = fOptions->GetInt("transfer_batch", 8);
+  unsigned transfer_batch = fOptions->GetInt("transfer_batch", 8);
   int bytes_this_loop(0);
   fRunning[link] = true;
   std::chrono::microseconds sleep_time(fOptions->GetInt("us_between_reads", 10));
