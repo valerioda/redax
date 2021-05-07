@@ -77,7 +77,7 @@ protected:
   std::tuple<struct tm, int> Now();
   void Flusher();
   int RotateLogFile();
-  virtual std::string FormatTime(struct tm*, int, char*nullptr);
+  virtual std::string FormatTime(struct tm*, int, char* = nullptr);
   virtual int Today(struct tm*);
   virtual std::string LogFileName(struct tm*);
   virtual std::experimental::filesystem::path OutputDirectory(struct tm*);
@@ -96,7 +96,7 @@ protected:
   int fDeleteAfterDays;
   int fToday;
   std::mutex fMutex;
-  std::list<std::tuple<struct tm, int, int, std::string>> fQueue;
+  std::list<std::tuple<int, int, std::string>> fQueue;
   std::condition_variable fCV;
   std::experimental::filesystem::path fOutputDir;
   std::thread fFlushThread;

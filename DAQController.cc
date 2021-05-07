@@ -215,7 +215,6 @@ void DAQController::ReadData(int link){
   fRunning[link] = true;
   std::chrono::microseconds sleep_time(fOptions->GetInt("us_between_reads", 10));
   int c = 0;
-  int bytes_last_loop = 0;
   const int num_threads = fNProcessingThreads;
   while(fReadLoop){
     for(auto& digi : fDigitizers[link]) {
@@ -260,7 +259,7 @@ void DAQController::ReadData(int link){
             t_end-t_start).count());
       bytes_this_loop = 0;
     }
-    readcycler = ++readcycler>10000 ? 0 : readcycler;
+    if (++readcycler > 10000) readcycler = 0;
     std::this_thread::sleep_for(sleep_time);
   } // while run
   if (mutex_wait_times.size() > 0) {
