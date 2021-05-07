@@ -77,7 +77,7 @@ protected:
   std::tuple<struct tm, int> Now();
   void Flusher();
   int RotateLogFile();
-  virtual std::string FormatTime(struct tm*, int, char*=nullptr);
+  virtual std::string FormatTime(struct tm*, int, char*nullptr);
   virtual int Today(struct tm*);
   virtual std::string LogFileName(struct tm*);
   virtual std::experimental::filesystem::path OutputDirectory(struct tm*);

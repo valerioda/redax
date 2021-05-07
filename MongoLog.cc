@@ -51,12 +51,12 @@ void MongoLog::Flusher() {
     std::unique_lock<std::mutex> lk(fMutex);
     fCV.wait(lk, [&]{return fQueue.size() > 0 || fFlush == false;});
     if (fQueue.size()) {
-      auto [today, ms, priority, message] = std::move(fQueue.front());
+      auto [today, std::ignore, priority, message] = std::move(fQueue.front());
       fQueue.pop_front();
       lk.unlock();
       if (Today(&today) != fToday) RotateLogFile();
-      std::cout << msg.str();
-      fOutfile << msg.str();
+      std::cout << message << std::endl;
+      fOutfile << message << std::endl;
       if(priority >= fLogLevel){
         try{
           auto d = bsoncxx::builder::stream::document{} <<
@@ -173,7 +173,7 @@ int MongoLog::Entry(int priority, const std::string& message, ...){
   while (full_message.back() == '\0') full_message.pop_back();
   {
     std::unique_lock<std::mutex> lg(fMutex);
-    fQueue.emplace_back(std::make_tuple(today, ms, priority, std::move(msg)));
+    fQueue.emplace_back(std::make_tuple(today, ms, priority, std::move(full_message)));
   }
   fCV.notify_one();
   return 0;

@@ -107,7 +107,6 @@ int DAQController::Arm(std::shared_ptr<Options>& options){
       digi->AcquisitionStop();
     }
   }
-  fCounter = 0;
   if (OpenThreads()) {
     fLog->Entry(MongoLog::Warning, "Error opening threads");
     fStatus = DAXHelpers::Idle;
