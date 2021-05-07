@@ -207,20 +207,22 @@ void DAQController::ReadData(int link){
   std::list<std::unique_ptr<data_packet>> local_buffer;
   std::unique_ptr<data_packet> dp;
   std::vector<int> mutex_wait_times;
+  std::vector<char> dps_per_loop;
   mutex_wait_times.reserve(1<<20);
+  dps_per_loop.reserve(1<<24);
   int words = 0;
   unsigned transfer_batch = fOptions->GetInt("transfer_batch", 8);
   int bytes_this_loop(0);
   fRunning[link] = true;
   std::chrono::microseconds sleep_time(fOptions->GetInt("us_between_reads", 10));
   int c = 0;
+  int bytes_last_loop = 0;
   const int num_threads = fNProcessingThreads;
   while(fReadLoop){
     for(auto& digi : fDigitizers[link]) {
 
-      // Every 1k reads check board status
-      if(readcycler%10000==0){
-        readcycler=0;
+      // periodically report board status
+      if(readcycler == 0){
         board_status = digi->GetAcquisitionStatus();
         fLog->Entry(MongoLog::Local, "Board %i has status 0x%04x",
             digi->bid(), board_status);
@@ -249,7 +251,8 @@ void DAQController::ReadData(int link){
         bytes_this_loop += words*sizeof(char32_t);
       }
     } // for digi in digitizers
-    if (local_buffer.size() >= transfer_batch) {
+    dps_per_loop.push_back(local_buffer.size());
+    if (local_buffer.size() >= transfer_batch || fReadLoop == false) {
       fDataRate += bytes_this_loop;
       auto t_start = std::chrono::high_resolution_clock::now();
       while (fFormatters[(++c)%num_threads]->ReceiveDatapackets(local_buffer, bytes_this_loop)) {}
@@ -258,7 +261,7 @@ void DAQController::ReadData(int link){
             t_end-t_start).count());
       bytes_this_loop = 0;
     }
-    readcycler++;
+    readcycler = ++readcycler>10000 ? 0 : readcycler;
     std::this_thread::sleep_for(sleep_time);
   } // while run
   if (mutex_wait_times.size() > 0) {

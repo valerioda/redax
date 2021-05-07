@@ -56,8 +56,7 @@ private:
   int fNProcessingThreads;
 
   // For reporting to frontend
-  std::atomic_int fDataRate;
-  std::atomic_long fCounter;
+  std::atomic_long fDataRate;
   std::atomic_int fPLL;
 };
 
