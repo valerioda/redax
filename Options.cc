@@ -240,7 +240,7 @@ std::vector<int> Options::GetBLTalloc() {
     for (auto& val : bson_options["blt_alloc"].get_array().value)
       ret.push_back(val.get_int32().value);
   } catch(std::exception& e) {
-    fLog->Entry(MongoLog::Local, "Using default BLT allocs")
+    fLog->Entry(MongoLog::Local, "Using default BLT allocs");
     ret.push_back(default_value);
   }
   return ret;

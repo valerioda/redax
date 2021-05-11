@@ -48,7 +48,7 @@ V1724::~V1724(){
   End();
   if (fBLTCounter.empty()) return;
   std::stringstream msg;
-  msg << "BLT report for board " << fBID << " (BLT " << BLT_SIZE << ")";
+  msg << "BLT report for board " << fBID;
   for (auto p : fBLTCounter) msg << " | " << p.first << " " << int(std::log2(p.second));
   fLog->Entry(MongoLog::Local, msg.str());
 }
@@ -231,7 +231,7 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
     }
     // Reserve space for this block transfer
     thisBLT = new char32_t[alloc_bytes/sizeof(char32_t)];
-    request_bytes = alloc_bytes/fBLTsafety;
+    request_bytes = alloc_bytes/fBLTSafety;
 
     ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress, thisBLT,
 				     request_bytes, cvA32_U_MBLT, cvD64, &nb);

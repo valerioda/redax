@@ -335,7 +335,7 @@ void DAQController::StatusUpdate(mongocxx::collection* collection) {
     }
   }
   int rate_alt = std::accumulate(retmap.begin(), retmap.end(), 0,
-      [&](int tot, std::pair<int, int>& p) {return std::move(tot) + p.second;});
+      [&](int tot, const std::pair<int, int>& p) {return std::move(tot) + p.second;});
   auto doc = document{} <<
     "host" << fHostname <<
     "time" << bsoncxx::types::b_date(std::chrono::system_clock::now())<<
