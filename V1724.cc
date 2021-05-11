@@ -216,7 +216,7 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
   xfer_buffers.reserve(4);
   //int blt_size[] = {16, 19, 20, 23};
 
-  int count = 0;
+  unsigned count = 0;
   int alloc_bytes, request_bytes;
   char32_t* thisBLT = nullptr;
   do{
