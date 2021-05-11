@@ -172,8 +172,9 @@ class DAQController():
         """
         Detector already in the TIMEOUT status are directly stopped.
         """
-        self.control_detector(command='stop', detector=detector)
-
+        self.control_detector(command='stop', detector=detector, force=self.can_force_stop[detector])
+        self.can_force_stop[detector]=False
+        self.check_timeouts(detector)
         return
 
     def stop_detector_gently(self, detector):
