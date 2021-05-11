@@ -83,6 +83,7 @@ public:
   std::vector<BoardType> GetBoards(std::string);
   std::vector<RegisterType> GetRegisters(int, bool=false);
   std::vector<uint16_t> GetDAC(int, int, uint16_t);
+  std::vector<int> GetBLTalloc();
   int GetV1495Opts(std::map<std::string, int>&);
   int GetCrateOpt(CrateOptions &ret);
   int GetHEVOpt(HEVOptions &ret);

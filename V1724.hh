@@ -71,7 +71,7 @@ protected:
   unsigned int fVMEAlignmentRegister;
   unsigned int fBoardErrRegister;
 
-  int BLT_SIZE;
+  std::vector<int> fBLTalloc;
   std::map<int, int> fBLTCounter;
 
   bool MonitorRegister(uint32_t reg, uint32_t mask, int ntries, int sleep, uint32_t val=1);
@@ -90,7 +90,7 @@ protected:
   std::shared_ptr<MongoLog> fLog;
   std::atomic_bool fError;
 
-  float fBLTSafety, fBufferSafety;
+  float fBLTSafety;
   int fSampleWidth, fClockCycle;
   int16_t fArtificialDeadtimeChannel;
 };
