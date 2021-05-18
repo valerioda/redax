@@ -207,7 +207,6 @@ void DAQController::ReadData(int link){
   std::unique_ptr<data_packet> dp;
   std::vector<int> mutex_wait_times;
   mutex_wait_times.reserve(1<<20);
-  dps_per_loop.reserve(1<<24);
   int words = 0;
   unsigned transfer_batch = fOptions->GetInt("transfer_batch", 8);
   int bytes_this_loop(0);
