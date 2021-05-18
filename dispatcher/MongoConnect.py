@@ -542,15 +542,15 @@ class MongoConnect():
         """
         number = None
         ls = self.latest_status[detector]
+        for host_list in hosts:
+            for h in host_list:
+                if h not in ls['readers'] or h not in ls['controller']:
+                    self.log.error(f'Trying to issue a {command} to {detector}/{h}?')
+                    host_list.remove(h)
         if command == 'stop' and not self.detector_ackd_command(detector, 'stop'):
             self.log.error(f"{detector} hasn't ack'd its last stop, let's not flog a dead horse")
             if not force:
                 return 1
-        for host_list in hosts:
-            for h in host_list:
-                if h not in ls['readers'] or h not in ls['controller']:
-                    self.log.debug(f'Trying to issue a {command} to {detector}/{h}?')
-                    host_list.remove(h)
         try:
             if command == 'arm':
                 number = self.get_next_run_number()
@@ -640,6 +640,9 @@ class MongoConnect():
         # exist, the dispatcher basically stops working
         hosts_this_detector = set(list(self.latest_status[detector]['readers'].keys()) + list(self.latest_status[detector]['controller'].keys()))
         hosts_in_doc = set(doc['host'])
+        hosts_ignored = hosts_this_detector ^ hosts_in_doc
+        if len(hosts_ignored):
+            self.log.warning(f'Ignoring hosts: {hosts_ignored}')
         # so we only loop over the intersection of this detector's hosts and the doc's hosts
         for h in hosts_this_detector & hosts_in_doc:
             if doc['acknowledged'][h] == 0:
