@@ -206,7 +206,6 @@ void DAQController::ReadData(int link){
   std::list<std::unique_ptr<data_packet>> local_buffer;
   std::unique_ptr<data_packet> dp;
   std::vector<int> mutex_wait_times;
-  std::vector<char> dps_per_loop;
   mutex_wait_times.reserve(1<<20);
   dps_per_loop.reserve(1<<24);
   int words = 0;
@@ -249,8 +248,7 @@ void DAQController::ReadData(int link){
         bytes_this_loop += words*sizeof(char32_t);
       }
     } // for digi in digitizers
-    dps_per_loop.push_back(local_buffer.size());
-    if (local_buffer.size() >= transfer_batch || fReadLoop == false) {
+    if (local_buffer.size() && (readcycler % transfer_batch == 0)) {
       fDataRate += bytes_this_loop;
       auto t_start = std::chrono::high_resolution_clock::now();
       while (fFormatters[(++c)%num_threads]->ReceiveDatapackets(local_buffer, bytes_this_loop)) {}
@@ -339,8 +337,8 @@ void DAQController::StatusUpdate(mongocxx::collection* collection) {
   auto doc = document{} <<
     "host" << fHostname <<
     "time" << bsoncxx::types::b_date(std::chrono::system_clock::now())<<
-    "rate_old" << rate/1e6 <<
-    "rate" << rate_alt/1e6 <<
+    "rate_old" << rate*1e-6 <<
+    "rate" << rate_alt*1e-6 <<
     "status" << fStatus <<
     "buffer_size" << (buf.first + buf.second)/1e6 <<
     "mode" << (fOptions ? fOptions->GetString("name", "none") : "none") <<
@@ -352,7 +350,7 @@ void DAQController::StatusUpdate(mongocxx::collection* collection) {
         doc << std::to_string(pair.first) << short(pair.second>>10); // KB not MB
       } << close_document << 
     finalize;
-  collection->insert_one(std::move(doc)); // opts is const&
+  collection->insert_one(std::move(doc));
   return;
 }
 
