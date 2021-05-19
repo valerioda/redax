@@ -541,6 +541,12 @@ class MongoConnect():
         Send this command to these hosts. If delay is set then wait that amount of time
         """
         number = None
+        ls = self.latest_status[detector]
+        for host_list in hosts:
+            for h in host_list:
+                if h not in ls['readers'] or h not in ls['controller']:
+                    self.log.error(f'Trying to issue a {command} to {detector}/{h}?')
+                    host_list.remove(h)
         if command == 'stop' and not self.detector_ackd_command(detector, 'stop'):
             self.log.error(f"{detector} hasn't ack'd its last stop, let's not flog a dead horse")
             if not force:
@@ -628,9 +634,17 @@ class MongoConnect():
         if (doc := self.collections['outgoing_commands'].find_one(q, sort=sort)) is None:
             self.log.error('No previous command found?')
             return True
-        for h in doc['host']:
-            # loop over doc['host'] because the 'acknowledged' field sometimes
-            # contains extra entries (such as the GPS trigger)
+        # we can't naively use everything in the hosts field, because we might be transitioning
+        # out of linked mode, and there might be "garbage" in the host list because someone
+        # didn't follow very clear instructions, and if a stop is issued to a host that doesn't
+        # exist, the dispatcher basically stops working
+        hosts_this_detector = set(list(self.latest_status[detector]['readers'].keys()) + list(self.latest_status[detector]['controller'].keys()))
+        hosts_in_doc = set(doc['host'])
+        hosts_ignored = hosts_this_detector ^ hosts_in_doc
+        if len(hosts_ignored):
+            self.log.warning(f'Ignoring hosts: {hosts_ignored}')
+        # so we only loop over the intersection of this detector's hosts and the doc's hosts
+        for h in hosts_this_detector & hosts_in_doc:
             if doc['acknowledged'][h] == 0:
                 return False
         return True
