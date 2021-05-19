@@ -650,7 +650,8 @@ class MongoConnect():
         return True
 
     def log_error(self, message, priority, etype):
-
+        #Start by logging the error localy
+        self.log.info(message)
         # Note that etype allows you to define timeouts.
         nowtime = now()
         if ( (etype in self.error_sent and self.error_sent[etype] is not None) and
