@@ -603,6 +603,10 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
               // iterate
               if (channel_finished[bid][ch] >= convergence_threshold) {
                 done &= true;
+                if (channel_finished[bid][ch]++ == convergence_threshold) {
+                  fLog->Entry(MongoLog::Local, "%i.%i converged after %i steps: %.1f", bid, ch,
+                      step, bl_per_channel[bid][ch][step]);
+                }
                 continue;
               }
 

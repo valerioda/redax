@@ -61,7 +61,7 @@ void MongoLog::Flusher() {
         try{
           auto d = bsoncxx::builder::stream::document{} <<
             "user" << fHostname <<
-            "message" << std::move(message) <<
+            "message" << message.substr(45) << // 45 overhead chars
             "priority" << priority <<
             "runid" << fRunId <<
             bsoncxx::builder::stream::finalize;
@@ -85,12 +85,12 @@ void MongoLog::Flusher() {
 std::string MongoLog::FormatTime(struct tm* date, int ms, char* writeto) {
   std::string out;
   if (writeto == nullptr) {
-    out = "YYYY-MM-DD HH:mm:SS.SSS";
+    out = "YYYY-MM-DD HH:mm:SS.SSS | fRunId |";
     writeto = out.data();
   }
   // this is kinda awkward but we can't use c++20's time-formatting gubbins so :(
-  std::sprintf(writeto, "%04i-%02i-%02i %02i:%02i:%02i.%03i", date->tm_year+1900,
-      date->tm_mon+1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec, ms);
+  std::sprintf(writeto, "%04i-%02i-%02i %02i:%02i:%02i.%03i | %6i |", date->tm_year+1900,
+      date->tm_mon+1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec, ms, fRunId);
   return out;
 }
 
@@ -160,19 +160,19 @@ int MongoLog::Entry(int priority, const std::string& message, ...){
   size_t len = std::vsnprintf(NULL, 0, message.c_str(), args);
   va_end (args);
   // Declare with proper length
-  int length_overhead = 36;
+  int length_overhead = 46;
   std::string full_message(length_overhead + len + 1, '\0');
   // Fill the new string we just made
   FormatTime(&today, ms, full_message.data());
-  int end_i = 24; // YYYY-MM-DD HH:MM:SS.SSS_
-  end_i += std::sprintf(full_message.data() + end_i, " [%s]:  ", fPriorities[priority+1].c_str());
+  int end_i = std::strlen("YYYY-MM-DD HH:MM:SS.SSS | fRunID |");
+  end_i += std::sprintf(full_message.data() + end_i, " %7s | ", fPriorities[priority+1].c_str());
   va_start (args, message);
   std::vsnprintf(full_message.data() + end_i, len+1, message.c_str(), args);
   va_end (args);
   // strip trailing \0
   while (full_message.back() == '\0') full_message.pop_back();
   {
-    std::unique_lock<std::mutex> lg(fMutex);
+    std::lock_guard<std::mutex> lg(fMutex);
     fQueue.emplace_back(std::make_tuple(Today(&today), priority, std::move(full_message)));
   }
   fCV.notify_one();
