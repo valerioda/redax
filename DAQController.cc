@@ -161,7 +161,7 @@ int DAQController::Stop(){
     if (one_still_running) std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }while(one_still_running && counter++ < 10);
   if (counter >= 10) fLog->Entry(MongoLog::Local, "Boards taking a while to clear");
-  std::cout<<"Deactivating boards"<<std::endl;
+  fLog->Entry(MongoLog::Local, "Stopping boards");
   for( auto const& link : fDigitizers ){
     for(auto digi : link.second){
       digi->AcquisitionStop(true);
@@ -190,7 +190,7 @@ int DAQController::Stop(){
   fPLL = 0;
   fLog->SetRunId(-1);
   fOptions.reset();
-  std::cout<<"Finished end"<<std::endl;
+  fLog->Entry(MongoLog::Local, "Finished end sequence");
   fStatus = DAXHelpers::Idle;
   return 0;
 }

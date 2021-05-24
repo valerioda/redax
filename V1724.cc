@@ -50,6 +50,7 @@ V1724::~V1724(){
   std::stringstream msg;
   msg << "BLT report for board " << fBID;
   for (auto p : fBLTCounter) msg << " | " << p.first << " " << int(std::log2(p.second));
+  msg << " | " << long(fTotReadTime.count());
   fLog->Entry(MongoLog::Local, msg.str());
 }
 
@@ -209,6 +210,8 @@ unsigned int V1724::ReadRegister(unsigned int reg){
 }
 
 int V1724::Read(std::unique_ptr<data_packet>& outptr){
+  using namespace std::chrono;
+  auto t_start = high_resolution_clock::now();
   if ((GetAcquisitionStatus() & 0x8) == 0) return 0;
   // Initialize
   int blt_words=0, nb=0, ret=-5;
@@ -269,6 +272,7 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
     outptr = std::make_unique<data_packet>(std::move(s), ht, cc);
   }
   for (auto b : xfer_buffers) delete[] b.first;
+  fTotReadTime += duration_cast<nanoseconds>(high_resolution_clock::now()-t_start);
   return blt_words;
 }
 

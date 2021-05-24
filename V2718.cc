@@ -31,7 +31,7 @@ int V2718::SendStartSignal(){
   // Line 3 : LED Pulser
   CAENVME_SetOutputConf(fBoardHandle, cvOutput3, cvDirect, cvActiveHigh, cvMiscSignals);
   // Line 4 : NV S-IN Logic
-  CAENVME_SetOutputConf(fBoardHandle, cvOutput4, cvDirect, cvActiveHigh, cvMiscSignals); // soonTM
+  CAENVME_SetOutputConf(fBoardHandle, cvOutput4, cvDirect, cvActiveHigh, cvManualSW);
 
 
   // Set the output register

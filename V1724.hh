@@ -93,6 +93,7 @@ protected:
   float fBLTSafety;
   int fSampleWidth, fClockCycle;
   int16_t fArtificialDeadtimeChannel;
+  std::chrono::nanoseconds fTotReadTime;
 };
 
 
