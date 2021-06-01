@@ -277,8 +277,9 @@ class DAQController():
                 self.hypervisor.tactical_nuclear_option()
                 self.last_nuke = now()
             else:
+                #self.control_detector(detector=detector, command='stop')
                 self.log.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')
-            return
+            #return
 
         if command is None: # not specified, we figure out it here
             command_times = [(cmd,doc[detector]) for cmd,doc in self.last_command.items()]
@@ -313,6 +314,7 @@ class DAQController():
                             self.hypervisor.tactical_nuclear_option()
                             self.last_nuke = now()
                         else:
+                            self.control_detector(detector=detector, command='stop')
                             self.log.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')
                     self.error_stop_count[detector] = 0
                 else:
