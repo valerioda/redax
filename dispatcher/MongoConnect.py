@@ -512,7 +512,7 @@ class MongoConnect():
                         channels |= set(map(int, doc['channels'].keys()))
                 updates = {'rate': rate}
                 if len(channels):
-                    update['no_data_from'] = sorted(list(set(range(494)) - channels))
+                    updates['no_data_from'] = sorted(list(set(range(494)) - channels))
                 self.collections['run'].update_one({'number': int(number)},
                                                    {'$set': updates})
                 if str(number) in self.run_start_cache:
@@ -741,4 +741,3 @@ class MongoConnect():
             self.log.error(f'Database having a moment: {type(e)}, {e}')
             return -1
         return None
-
