@@ -52,7 +52,6 @@ class V1724{
   virtual bool EnsureStopped(int ntries, int sleep);
   virtual int CheckErrors();
   virtual uint32_t GetAcquisitionStatus();
-  virtual int ResetClocks();
 
 protected:
   // Some values for base classes to override 

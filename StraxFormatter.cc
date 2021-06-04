@@ -134,6 +134,12 @@ void StraxFormatter::ProcessDatapacket(std::unique_ptr<data_packet> dp){
         fLog->Entry(MongoLog::Warning, "Missed an event from %i at idx %x/%x (%x)",
             dp->digi->bid(), std::distance(dp->buff.begin(), it), dp->buff.size(), *it);
         missed = false;
+        // this happens quite rarely, the chance of overwriting ourselves is vanishing
+        // but it's nice to be able to know why we missed an event
+        std::string filename = std::to_string(fOptions->GetInt("number", -1)) + "_missed";
+        std::ofstream fout(filename, std::ios::out | std::ios::binary);
+        fout.write((char*)dp->buff.data(), dp->buff.size()*sizeof(dp->buff[0]));
+        fout.close();
       }
       it++;
     }
