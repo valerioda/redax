@@ -116,7 +116,7 @@ int MongoLog::RotateLogFile() {
   auto filename = LogFilePath(&today);
   std::cout<<"Logging to " << filename << std::endl;
   auto pp = filename.parent_path();
-  if (!fs::exists(pp) && !fs::create_directories(pp)) {
+  if (!pp.empty() && !fs::exists(pp) && !fs::create_directories(pp)) {
     std::cout << "Could not create output directories for logging!" << std::endl;
     return -1;
   }

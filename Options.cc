@@ -234,7 +234,7 @@ std::vector<u_int16_t> Options::GetThresholds(int board) {
 }
 
 std::vector<int> Options::GetBLTalloc() {
-  int default_value = 19;
+  int default_value = 23;
   std::vector<int> ret;
   try{
     for (auto& val : bson_options["blt_alloc"].get_array().value)
