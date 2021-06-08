@@ -504,8 +504,17 @@ class MongoConnect():
                                 'max': {'$max': '$rate'}}}
                     ]):
                     rate[doc['_id']] = {'avg': doc['avg'], 'max': doc['max']}
+                channels = set()
+                if 'tpc' in detectors:
+                    # figure out which channels weren't running
+                    readers = list(self.latest_status[detectors]['readers'].keys())
+                    for doc in self.collections['node_status'].find({'host': {'$in': readers}, 'number': int(number)}):
+                        channels |= set(map(int, doc['channels'].keys()))
+                updates = {'rate': rate}
+                if len(channels):
+                    updates['no_data_from'] = sorted(list(set(range(494)) - channels))
                 self.collections['run'].update_one({'number': int(number)},
-                                                   {'$set': {'rate': rate}})
+                                                   {'$set': updates})
                 if str(number) in self.run_start_cache:
                     del self.run_start_cache[str(number)]
             else:
@@ -747,4 +756,3 @@ class MongoConnect():
             self.log.error(f'Database having a moment: {type(e)}, {e}')
             return -1
         return None
-
