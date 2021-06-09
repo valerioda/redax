@@ -37,7 +37,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   fRolloverCounter = 0;
   fLastClock = 0;
   fBLTSafety = opts->GetDouble("blt_safety_factor", 1.5);
-  BLT_SIZE = opts->GetInt("blt_size", 512*1024);
+  fBLTalloc = opts->GetBLTalloc();
   // there's a more elegant way to do this, but I'm not going to write it
   fClockPeriod = std::chrono::nanoseconds((1l<<31)*fClockCycle);
   fArtificialDeadtimeChannel = 790;
@@ -48,8 +48,9 @@ V1724::~V1724(){
   End();
   if (fBLTCounter.empty()) return;
   std::stringstream msg;
-  msg << "BLT report for board " << fBID << " (BLT " << BLT_SIZE << ")";
+  msg << "BLT report for board " << fBID;
   for (auto p : fBLTCounter) msg << " | " << p.first << " " << int(std::log2(p.second));
+  msg << " | " << long(fTotReadTime.count());
   fLog->Entry(MongoLog::Local, msg.str());
 }
 
@@ -209,23 +210,33 @@ unsigned int V1724::ReadRegister(unsigned int reg){
 }
 
 int V1724::Read(std::unique_ptr<data_packet>& outptr){
+  using namespace std::chrono;
+  auto t_start = high_resolution_clock::now();
   if ((GetAcquisitionStatus() & 0x8) == 0) return 0;
   // Initialize
   int blt_words=0, nb=0, ret=-5;
   std::vector<std::pair<char32_t*, int>> xfer_buffers;
-  xfer_buffers.reserve(16);
+  xfer_buffers.reserve(4);
 
-  int count = 0;
-  int alloc_words = BLT_SIZE/sizeof(char32_t)*fBLTSafety;
+  unsigned count = 0;
+  int alloc_bytes, request_bytes;
   char32_t* thisBLT = nullptr;
   do{
-
+    // each loop allocate more memory than the last one.
+    // there's a fine line to walk between making many small allocations for full digitizers
+    // and fewer, large allocations for empty digitizers. 16 19 20 23 seem to be optimal
+    // for the readers, but this depends heavily on specific machines.
+    if (count < fBLTalloc.size()) {
+      alloc_bytes = 1 << fBLTalloc[count];
+    } else {
+      alloc_bytes = 1 << (fBLTalloc.back() + count - fBLTalloc.size() + 1);
+    }
     // Reserve space for this block transfer
-    thisBLT = new char32_t[alloc_words];
+    thisBLT = new char32_t[alloc_bytes/sizeof(char32_t)];
+    request_bytes = alloc_bytes/fBLTSafety;
 
-    ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress,
-				     ((unsigned char*)thisBLT),
-				     BLT_SIZE, cvA32_U_MBLT, cvD64, &nb);
+    ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress, thisBLT,
+				     request_bytes, cvA32_U_MBLT, cvD64, &nb);
     if( (ret != cvSuccess) && (ret != cvBusError) ){
       fLog->Entry(MongoLog::Error,
 		  "Board %i read error after %i reads: (%i) and transferred %i bytes this read",
@@ -236,9 +247,9 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
       for (auto& b : xfer_buffers) delete[] b.first;
       return -1;
     }
-    if (nb > BLT_SIZE) fLog->Entry(MongoLog::Message,
-        "Board %i got %i more bytes than asked for (headroom %i)",
-        fBID, nb-BLT_SIZE, alloc_words*sizeof(char32_t)-nb);
+    if (nb > request_bytes) fLog->Entry(MongoLog::Message,
+        "Board %i got %x more bytes than asked for (headroom %i)",
+        fBID, nb-request_bytes, alloc_bytes-nb);
 
     count++;
     blt_words+=nb/sizeof(char32_t);
@@ -246,26 +257,21 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
 
   }while(ret != cvBusError);
 
-  /*Now, unfortunately we need to make one copy of the data here or else our memory
-    usage explodes. We declare above a buffer of several MB, which is the maximum capacity
-    of the board in case every channel is 100% saturated (the practical largest
-    capacity is certainly smaller depending on settings). But if we just keep reserving
-    O(MB) blocks and filling 50kB with actual data, we're gonna run out of memory.
-    So here we declare the return buffer as *just* large enough to hold the actual
-    data and free up the rest of the memory reserved as buffer.
-    In tests this does not seem to impact our ability to read out the V1724 at the
-    maximum bandwidth of the link. */
+  // Now we have to concatenate all this data into a single continuous buffer
+  // because I'm too lazy to write a class that allows us to use fragmented
+  // buffers as if they were continuous
   if(blt_words>0){
     std::u32string s;
     s.reserve(blt_words);
     for (auto& xfer : xfer_buffers) {
       s.append(xfer.first, xfer.second);
     }
-    fBLTCounter[count]++;
+    fBLTCounter[int(std::ceil(std::log2(blt_words)))]++;
     auto [ht, cc] = GetClockInfo(s);
     outptr = std::make_unique<data_packet>(std::move(s), ht, cc);
   }
   for (auto b : xfer_buffers) delete[] b.first;
+  fTotReadTime += duration_cast<nanoseconds>(high_resolution_clock::now()-t_start);
   return blt_words;
 }
 

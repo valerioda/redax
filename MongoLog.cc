@@ -51,19 +51,17 @@ void MongoLog::Flusher() {
     std::unique_lock<std::mutex> lk(fMutex);
     fCV.wait(lk, [&]{return fQueue.size() > 0 || fFlush == false;});
     if (fQueue.size()) {
-      auto [today, ms, priority, message] = std::move(fQueue.front());
+      auto [today, priority, message] = std::move(fQueue.front());
       fQueue.pop_front();
       lk.unlock();
-      std::stringstream msg;
-      msg<<FormatTime(&today, ms)<<" ["<<fPriorities[priority+1] <<"]: "<<message<<std::endl;
-      if (Today(&today) != fToday) RotateLogFile();
-      std::cout << msg.str();
-      fOutfile << msg.str();
+      if (today != fToday) RotateLogFile();
+      std::cout << message << std::endl;
+      fOutfile << message << std::endl;
       if(priority >= fLogLevel){
         try{
           auto d = bsoncxx::builder::stream::document{} <<
             "user" << fHostname <<
-            "message" << std::move(message) <<
+            "message" << message.substr(45) << // 45 overhead chars
             "priority" << priority <<
             "runid" << fRunId <<
             bsoncxx::builder::stream::finalize;
@@ -84,11 +82,15 @@ void MongoLog::Flusher() {
   } // while
 }
 
-std::string MongoLog::FormatTime(struct tm* date, int ms) {
-  std::string out("YYYY-MM-DD HH:mm:SS.SSS");
+std::string MongoLog::FormatTime(struct tm* date, int ms, char* writeto) {
+  std::string out;
+  if (writeto == nullptr) {
+    out = "YYYY-MM-DD HH:mm:SS.SSS | fRunId |";
+    writeto = out.data();
+  }
   // this is kinda awkward but we can't use c++20's time-formatting gubbins so :(
-  sprintf(out.data(), "%04i-%02i-%02i %02i:%02i:%02i.%03i", date->tm_year+1900,
-      date->tm_mon+1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec, ms);
+  std::sprintf(writeto, "%04i-%02i-%02i %02i:%02i:%02i.%03i | %6i |", date->tm_year+1900,
+      date->tm_mon+1, date->tm_mday, date->tm_hour, date->tm_min, date->tm_sec, ms, fRunId);
   return out;
 }
 
@@ -114,7 +116,7 @@ int MongoLog::RotateLogFile() {
   auto filename = LogFilePath(&today);
   std::cout<<"Logging to " << filename << std::endl;
   auto pp = filename.parent_path();
-  if (!fs::exists(pp) && !fs::create_directories(pp)) {
+  if (!pp.empty() && !fs::exists(pp) && !fs::create_directories(pp)) {
     std::cout << "Could not create output directories for logging!" << std::endl;
     return -1;
   }
@@ -123,7 +125,7 @@ int MongoLog::RotateLogFile() {
     std::cout << "Could not rotate logfile!\n";
     return -1;
   }
-  fOutfile << FormatTime(&today, ms) << " [INIT]: logfile initialized: commit " << REDAX_BUILD_COMMIT << "\n";
+  fOutfile << FormatTime(&today, ms) << " INIT | logfile initialized, commit " << REDAX_BUILD_COMMIT << "\n";
   fToday = Today(&today);
   if (fDeleteAfterDays == 0) return 0;
   std::vector<int> days_per_month = {31,28,31,30,31,30,31,31,30,31,30,31};
@@ -139,11 +141,11 @@ int MongoLog::RotateLogFile() {
     last_week.tm_mday += days_per_month[last_week.tm_mon]; // off by one error???
   }
   auto p = LogFileName(&last_week);
-  if (std::experimental::filesystem::exists(p)) {
-    fOutfile << FormatTime(&today, ms) << " [INIT]: Deleting " << p << '\n';
-    std::experimental::filesystem::remove(p);
+  if (fs::exists(p)) {
+    fOutfile << FormatTime(&today, ms) << " INIT | Deleting " << p << '\n';
+    fs::remove(p);
   } else {
-    fOutfile << FormatTime(&today, ms) << " [INIT]: No older logfile to delete :(\n";
+    fOutfile << FormatTime(&today, ms) << " INIT | No older logfile to delete :(\n";
   }
   return 0;
 }
@@ -151,24 +153,27 @@ int MongoLog::RotateLogFile() {
 int MongoLog::Entry(int priority, const std::string& message, ...){
   auto [today, ms] = Now();
 
-  // Thanks Martin
-  // http://www.martinbroadhurst.com/string-formatting-in-c.html
+  // if we had c++20 this would look much cleaner
   va_list args;
   va_start (args, message);
   // First pass just gets what the length will be
   size_t len = std::vsnprintf(NULL, 0, message.c_str(), args);
   va_end (args);
   // Declare with proper length
-  std::string msg(len + 1, 0);
-  va_start (args, message);
+  int length_overhead = 50;
+  std::string full_message(length_overhead + len + 1, '\0');
   // Fill the new string we just made
-  std::vsnprintf(msg.data(), len+1, message.c_str(), args);
+  FormatTime(&today, ms, full_message.data());
+  int end_i = std::strlen("YYYY-MM-DD HH:MM:SS.SSS | fRunID |");
+  end_i += std::sprintf(full_message.data() + end_i, " %7s | ", fPriorities[priority+1].c_str());
+  va_start (args, message);
+  std::vsnprintf(full_message.data() + end_i, len+1, message.c_str(), args);
   va_end (args);
-  // strip the trailing \0
-  msg.pop_back();
+  // strip trailing \0
+  while (full_message.back() == '\0') full_message.pop_back();
   {
-    std::unique_lock<std::mutex> lg(fMutex);
-    fQueue.emplace_back(std::make_tuple(std::move(today), ms, priority, std::move(msg)));
+    std::lock_guard<std::mutex> lg(fMutex);
+    fQueue.emplace_back(std::make_tuple(Today(&today), priority, std::move(full_message)));
   }
   fCV.notify_one();
   return 0;

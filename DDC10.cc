@@ -16,6 +16,15 @@ DDC10::DDC10(){
 }
 
 DDC10::~DDC10(){
+   fHopts.signal_threshold = fHopts.sign = fHopts.rise_time_cut = fHopts.dynamic_veto_limit = fHopts.static_veto_duration = 0;
+   fHopts.integration_threshold = fHopts.rho_0 = fHopts.rho_1 = fHopts.rho_2 = fHopts.rho_3 = 0;
+   fHopts.window = fHopts.prescaling = fHopts.component_status = fHopts.width_cut = fHopts.delay = 0;
+   try{
+     if (fHopts.address != "")
+       Initialize(fHopts);
+   }catch(std::exception& e) {
+     std::cout<<"HEV cleanup threw: " << e.what() << std::endl;
+   }
 }
 
 int DDC10::Initialize(HEVOptions d_opts)

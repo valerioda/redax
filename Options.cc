@@ -233,6 +233,19 @@ std::vector<u_int16_t> Options::GetThresholds(int board) {
   }
 }
 
+std::vector<int> Options::GetBLTalloc() {
+  int default_value = 23;
+  std::vector<int> ret;
+  try{
+    for (auto& val : bson_options["blt_alloc"].get_array().value)
+      ret.push_back(val.get_int32().value);
+  } catch(std::exception& e) {
+    fLog->Entry(MongoLog::Local, "Using default BLT allocs");
+    ret.push_back(default_value);
+  }
+  return ret;
+}
+
 int Options::GetV1495Opts(std::map<std::string, int>& ret) {
   if (bson_options.find("V1495") == bson_options.end())
     return 1;

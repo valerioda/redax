@@ -39,22 +39,24 @@ void UpdateStatus(std::shared_ptr<mongocxx::pool> pool, std::string dbname,
   auto client = pool->acquire();
   auto db = (*client)[dbname];
   auto collection = db["status"];
+  auto next_sec = ceil<seconds>(system_clock::now());
+  const auto dt = seconds(1);
+  std::this_thread::sleep_until(next_sec);
   while (b_run == true) {
-    auto start = std::chrono::system_clock::now();
     try{
       controller->StatusUpdate(&collection);
     }catch(const std::exception &e){
       std::cout<<"Can't connect to DB to update."<<std::endl;
       std::cout<<e.what()<<std::endl;
     }
-    auto end = std::chrono::system_clock::now();
-    std::this_thread::sleep_for(seconds(1)-(end-start));
+    next_sec += dt;
+    std::this_thread::sleep_until(next_sec);
   }
   std::cout<<"Status update returning\n";
 }
 
 int PrintUsage() {
-  std::cout<<"Welcome to REDAX\nAccepted command-line arguments:\n"
+  std::cout<<"Welcome to redax\nAccepted command-line arguments:\n"
     << "--id <id number>: id number of this readout instance, required\n"
     << "--uri <mongo uri>: full MongoDB URI, required\n"
     << "--db <database name>: name of the database to use, default \"daq\"\n"
