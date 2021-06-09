@@ -553,7 +553,7 @@ class MongoConnect():
         ls = self.latest_status[detector]
         for host_list in hosts:
             for h in host_list:
-                if h not in ls['readers'] or h not in ls['controller']:
+                if h not in ls['readers'] and h not in ls['controller']:
                     self.log.error(f'Trying to issue a {command} to {detector}/{h}?')
                     host_list.remove(h)
         if command == 'stop' and not self.detector_ackd_command(detector, 'stop'):
@@ -647,9 +647,9 @@ class MongoConnect():
         # out of linked mode, and there might be "garbage" in the host list because someone
         # didn't follow very clear instructions, and if a stop is issued to a host that doesn't
         # exist, the dispatcher basically stops working
-        hosts_this_detector = set(list(self.latest_status[detector]['readers'].keys()) + list(self.latest_status[detector]['controller'].keys()))
+        hosts_this_detector = set(self.latest_status[detector]['readers'].keys()) | set(self.latest_status[detector]['controller'].keys())
         hosts_in_doc = set(doc['host'])
-        hosts_ignored = hosts_this_detector ^ hosts_in_doc
+        hosts_ignored = hosts_in_doc - hosts_this_detector
         if len(hosts_ignored):
             self.log.warning(f'Ignoring hosts: {hosts_ignored}')
         # so we only loop over the intersection of this detector's hosts and the doc's hosts
