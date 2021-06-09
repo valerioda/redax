@@ -217,7 +217,6 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
   int blt_words=0, nb=0, ret=-5;
   std::vector<std::pair<char32_t*, int>> xfer_buffers;
   xfer_buffers.reserve(4);
-  //int blt_size[] = {16, 19, 20, 23};
 
   unsigned count = 0;
   int alloc_bytes, request_bytes;
@@ -249,7 +248,7 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
       return -1;
     }
     if (nb > request_bytes) fLog->Entry(MongoLog::Message,
-        "Board %i got %x more bytes than asked for (headroom %x)",
+        "Board %i got %x more bytes than asked for (headroom %i)",
         fBID, nb-request_bytes, alloc_bytes-nb);
 
     count++;

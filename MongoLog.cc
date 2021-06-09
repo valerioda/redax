@@ -125,7 +125,7 @@ int MongoLog::RotateLogFile() {
     std::cout << "Could not rotate logfile!\n";
     return -1;
   }
-  fOutfile << FormatTime(&today, ms) << " [INIT]: logfile initialized: commit " << REDAX_BUILD_COMMIT << "\n";
+  fOutfile << FormatTime(&today, ms) << " INIT | logfile initialized, commit " << REDAX_BUILD_COMMIT << "\n";
   fToday = Today(&today);
   if (fDeleteAfterDays == 0) return 0;
   std::vector<int> days_per_month = {31,28,31,30,31,30,31,31,30,31,30,31};
@@ -141,11 +141,11 @@ int MongoLog::RotateLogFile() {
     last_week.tm_mday += days_per_month[last_week.tm_mon]; // off by one error???
   }
   auto p = LogFileName(&last_week);
-  if (std::experimental::filesystem::exists(p)) {
-    fOutfile << FormatTime(&today, ms) << " [INIT]: Deleting " << p << '\n';
-    std::experimental::filesystem::remove(p);
+  if (fs::exists(p)) {
+    fOutfile << FormatTime(&today, ms) << " INIT | Deleting " << p << '\n';
+    fs::remove(p);
   } else {
-    fOutfile << FormatTime(&today, ms) << " [INIT]: No older logfile to delete :(\n";
+    fOutfile << FormatTime(&today, ms) << " INIT | No older logfile to delete :(\n";
   }
   return 0;
 }
@@ -160,7 +160,7 @@ int MongoLog::Entry(int priority, const std::string& message, ...){
   size_t len = std::vsnprintf(NULL, 0, message.c_str(), args);
   va_end (args);
   // Declare with proper length
-  int length_overhead = 46;
+  int length_overhead = 50;
   std::string full_message(length_overhead + len + 1, '\0');
   // Fill the new string we just made
   FormatTime(&today, ms, full_message.data());
