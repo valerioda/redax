@@ -21,8 +21,8 @@ class V1724{
 
   virtual int Init(int, int, std::shared_ptr<Options>&);
   virtual int Read(std::unique_ptr<data_packet>&);
-  virtual int WriteRegister(unsigned int reg, unsigned int value);
-  virtual unsigned int ReadRegister(unsigned int reg);
+  virtual int WriteRegister(unsigned int, uint32_t, bool=false);
+  virtual unsigned int ReadRegister(unsigned int);
   virtual int End();
 
   int bid() {return fBID;}

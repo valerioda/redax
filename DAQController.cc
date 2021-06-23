@@ -124,27 +124,30 @@ int DAQController::Start(){
     for(auto& link : fDigitizers ){
       for(auto& digi : link.second){
 
-	// Ensure digitizer is ready to start
-	if(digi->EnsureReady(1000, 1000)!= true){
-	  fLog->Entry(MongoLog::Warning, "Digitizer not ready to start after sw command sent");
-	  return -1;
-	}
+        // Ensure digitizer is ready to start
+        if(digi->EnsureReady(1000, 1000)!= true){
+          fLog->Entry(MongoLog::Warning, "Digitizer not ready to start after sw command sent");
+          return -1;
+        }
 
-	// Send start command
-	digi->SoftwareStart();
+        // Send start command
+        digi->SoftwareStart();
 
-	// Ensure digitizer is started
-	if(digi->EnsureStarted(1000, 1000)!=true){
-	  fLog->Entry(MongoLog::Warning,
-		      "Timed out waiting for acquisition to start after SW start sent");
-	  return -1;
-	}
+        // Ensure digitizer is started
+        if(digi->EnsureStarted(1000, 1000)!=true){
+          fLog->Entry(MongoLog::Warning,
+              "Timed out waiting for acquisition to start after SW start sent");
+          return -1;
+        }
       }
     }
   } else {
     for (auto& link : fDigitizers)
       for (auto& digi : link.second)
-        digi->SINStart();
+        if (digi->SINStart() || !digi->EnsureReady(1000,1000))
+          fLog->Entry(MongoLog::Warning, "Board %i not ready to start?", digi->bid());
+        else
+          fLog->Entry(MongoLog::Local, "Board %i is ARMED and DANGEROUS", digi->bid());
   }
   fStatus = DAXHelpers::Running;
   return 0;
@@ -185,7 +188,6 @@ int DAQController::Stop(){
     link.second.clear();
   }
   fDigitizers.clear();
-  fStatus = DAXHelpers::Idle;
 
   fPLL = 0;
   fLog->SetRunId(-1);
