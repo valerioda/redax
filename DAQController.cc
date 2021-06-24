@@ -506,7 +506,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
     std::this_thread::sleep_for(1ms);
 
     // readout
-    for (auto d& : digis) {
+    for (auto& d : digis) {
       words_read[d->bid()] = d->Read(buffers[d->bid()]);
     }
 
