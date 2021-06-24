@@ -41,6 +41,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   // there's a more elegant way to do this, but I'm not going to write it
   fClockPeriod = std::chrono::nanoseconds((1l<<31)*fClockCycle);
   fArtificialDeadtimeChannel = 790;
+  fRegisterFlags = 3;
 
 }
 
@@ -136,7 +137,7 @@ int V1724::CheckErrors(){
 }
 
 int V1724::Reset() {
-  int ret = WriteRegister(fResetRegister, 0x1, false);
+  int ret = WriteRegister(fResetRegister, 0x1, 1);
   ret += WriteRegister(fBoardErrRegister, 0x30);
   return ret;
 }
@@ -182,13 +183,14 @@ int V1724::GetClockCounter(uint32_t timestamp){
   return fRolloverCounter;
 }
 
-int V1724::WriteRegister(unsigned int reg, uint32_t value, bool confirm){
+int V1724::WriteRegister(unsigned int reg, uint32_t value){
+  bool echo = fRegisterFlags & 0x1, confirm = fRegisterFlags & 0x2;
   int ret = 0;
   if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg, &value, cvA32_U_DATA, cvD32)) != cvSuccess){
     fLog->Entry(MongoLog::Warning, "Board %i write returned %i (ret), reg 0x%04x, value 0x%08x", fBID, ret, reg, value);
     return -1;
   }
-  fLog->Entry(MongoLog::Local, "Board %i wrote 0x%x to 0x%04x", fBID, value, reg);
+  if (echo) fLog->Entry(MongoLog::Local, "Board %i wrote 0x%x to 0x%04x", fBID, value, reg);
   uint32_t temp;
   if (confirm && (temp = ReadRegister(reg)) != value) {
     fLog->Entry(MongoLog::Debug, "Board %i unconfirmed write to 0x%04x: wanted 0x%x got 0x%x", fBID, reg, value, temp);
@@ -301,7 +303,7 @@ int V1724::End(){
 }
 
 void V1724::ClampDACValues(std::vector<uint16_t> &dac_values,
-                  std::map<std::string, std::vector<double>> &cal_values) {
+    std::map<std::string, std::vector<double>> &cal_values) {
   uint16_t min_dac, max_dac(0xffff);
   for (unsigned ch = 0; ch < fNChannels; ch++) {
     if (cal_values["yint"][ch] > 0x3fff) {
@@ -311,8 +313,8 @@ void V1724::ClampDACValues(std::vector<uint16_t> &dac_values,
     }
     dac_values[ch] = std::clamp(dac_values[ch], min_dac, max_dac);
     if ((dac_values[ch] == min_dac) || (dac_values[ch] == max_dac)) {
-      fLog->Entry(MongoLog::Local, "Board %i channel %i clamped dac to 0x%04x",
-	fBID, ch, dac_values[ch]);
+      fLog->Entry(MongoLog::Local, "Board %i channel %i clamped dac to 0x%04x (%.1f, %.1f)",
+          fBID, ch, dac_values[ch], cal_values["slope"][ch], cal_values["yint"][ch]);
     }
   }
 }

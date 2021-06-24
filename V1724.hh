@@ -21,7 +21,7 @@ class V1724{
 
   virtual int Init(int, int, std::shared_ptr<Options>&);
   virtual int Read(std::unique_ptr<data_packet>&);
-  virtual int WriteRegister(unsigned int, uint32_t, bool=false);
+  virtual int WriteRegister(unsigned int, uint32_t);
   virtual unsigned int ReadRegister(unsigned int);
   virtual int End();
 
@@ -39,6 +39,8 @@ class V1724{
   virtual std::tuple<int64_t, int, uint16_t, std::u32string_view> UnpackChannelHeader(std::u32string_view, long, uint32_t, uint32_t, int, int);
 
   bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
+  void SetFlags(int flags) {fRegisterFlags = flags;}
+  void ResetFlags() {fRegisterFlags = 3;}
 
   // Acquisition Control
 
@@ -80,6 +82,7 @@ protected:
   int fBoardHandle;
   int fBID;
   unsigned int fBaseAddress;
+  int fRegisterFlags;
 
   // Stuff for clock reset tracking
   int fRolloverCounter;
