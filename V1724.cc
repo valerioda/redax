@@ -187,14 +187,16 @@ int V1724::WriteRegister(unsigned int reg, uint32_t value){
   bool echo = fRegisterFlags & 0x1, confirm = fRegisterFlags & 0x2;
   int ret = 0;
   if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg, &value, cvA32_U_DATA, cvD32)) != cvSuccess){
-    fLog->Entry(MongoLog::Warning, "Board %i write returned %i (ret), reg 0x%04x, value 0x%08x", fBID, ret, reg, value);
+    fLog->Entry(MongoLog::Warning, "Board %i write returned %i (ret), reg 0x%04x, value 0x%x", fBID, ret, reg, value);
     return -1;
   }
   if (echo) fLog->Entry(MongoLog::Local, "Board %i wrote 0x%x to 0x%04x", fBID, value, reg);
   uint32_t temp;
-  if (confirm && (reg != fResetRegister) && (temp = ReadRegister(reg)) != value) {
-    fLog->Entry(MongoLog::Debug, "Board %i unconfirmed write to 0x%04x: wanted 0x%x got 0x%x", fBID, reg, value, temp);
-  }
+  /*if (confirm) {
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
+    if ((reg != fResetRegister) && (temp = ReadRegister(reg)) != value)
+      fLog->Entry(MongoLog::Debug, "Board %i unconfirmed write to 0x%04x: wanted 0x%x got 0x%x", fBID, reg, value, temp);
+  }*/
   return 0;
 }
 
@@ -202,7 +204,7 @@ unsigned int V1724::ReadRegister(unsigned int reg){
   unsigned int temp;
   int ret = 0;
   if((ret = CAENVME_ReadCycle(fBoardHandle, fBaseAddress+reg, &temp, cvA32_U_DATA, cvD32)) != cvSuccess){
-    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%08x (val) for reg 0x%04x", fBID, ret, temp, reg);
+    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%x (val) for reg 0x%04x", fBID, ret, temp, reg);
     return 0xFFFFFFFF;
   }
   return temp;
