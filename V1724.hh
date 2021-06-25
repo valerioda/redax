@@ -40,7 +40,7 @@ class V1724{
 
   bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
   void SetFlags(int flags) {fRegisterFlags = flags;}
-  void ResetFlags() {fRegisterFlags = 3;}
+  void ResetFlags() {fRegisterFlags = 1;}
 
   // Acquisition Control
 

@@ -41,7 +41,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   // there's a more elegant way to do this, but I'm not going to write it
   fClockPeriod = std::chrono::nanoseconds((1l<<31)*fClockCycle);
   fArtificialDeadtimeChannel = 790;
-  fRegisterFlags = 3;
+  fRegisterFlags = 1;
 
 }
 
@@ -184,19 +184,15 @@ int V1724::GetClockCounter(uint32_t timestamp){
 }
 
 int V1724::WriteRegister(unsigned int reg, uint32_t value){
-  bool echo = fRegisterFlags & 0x1, confirm = fRegisterFlags & 0x2;
+  bool echo = fRegisterFlags & 0x1;
   int ret = 0;
   if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg, &value, cvA32_U_DATA, cvD32)) != cvSuccess){
     fLog->Entry(MongoLog::Warning, "Board %i write returned %i (ret), reg 0x%04x, value 0x%x", fBID, ret, reg, value);
     return -1;
   }
   if (echo) fLog->Entry(MongoLog::Local, "Board %i wrote 0x%x to 0x%04x", fBID, value, reg);
-  uint32_t temp;
-  /*if (confirm) {
-    std::this_thread::sleep_for(std::chrono::microseconds(10));
-    if ((reg != fResetRegister) && (temp = ReadRegister(reg)) != value)
-      fLog->Entry(MongoLog::Debug, "Board %i unconfirmed write to 0x%04x: wanted 0x%x got 0x%x", fBID, reg, value, temp);
-  }*/
+  // would love to confirm the write, but not all registers are read-able and you get a -1 if you try
+  // and I don't feel like coding in the entire register document so we know which are which
   return 0;
 }
 
@@ -315,7 +311,7 @@ void V1724::ClampDACValues(std::vector<uint16_t> &dac_values,
     }
     dac_values[ch] = std::clamp(dac_values[ch], min_dac, max_dac);
     if ((dac_values[ch] == min_dac) || (dac_values[ch] == max_dac)) {
-      fLog->Entry(MongoLog::Local, "Board %i channel %i clamped dac to 0x%04x (%.1f, %.1f)",
+      fLog->Entry(MongoLog::Local, "%i.%i clamped dac to 0x%04x (%.2f, %.1f)",
           fBID, ch, dac_values[ch], cal_values["slope"][ch], cal_values["yint"][ch]);
     }
   }

@@ -422,7 +422,10 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
   int bid(0);
   int triggers_per_step = fOptions->GetInt("baseline_triggers_per_step", 3);
   std::chrono::milliseconds ms_between_triggers(fOptions->GetInt("baseline_ms_between_triggers", 10));
-  vector<uint16_t> DAC_cal_points = {50000, 30000, 6000};
+  // if you set these values too close to the extrema such that you risk pushing the waveform
+  // out of the board's dynamic range, you will have issues. Also they're stored as long rather than uint16_t
+  // because shorts will overflow when you multiply them together but longs won't
+  vector<long> DAC_cal_points = {40000, 20000, 10000};
   std::map<int, vector<int>> channel_finished;
   std::map<int, std::unique_ptr<data_packet>> buffers;
   std::map<int, int> words_read;
@@ -435,7 +438,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
     ch_this_digi = digi->GetNumChannels();
     dac_values[bid] = vector<u_int16_t>(ch_this_digi, 0);
     channel_finished[bid] = vector<int>(ch_this_digi, 0);
-    bl_per_channel[bid] = vector<vector<double>>(ch_this_digi, vector<double>(max_steps,0.));
+    bl_per_channel[bid] = vector<vector<double>>(ch_this_digi);
     current_step[bid] = vector<unsigned>(ch_this_digi, 0);
     cal_values[bid] = std::map<std::string, vector<double>>(
         {{"slope", vector<double>(ch_this_digi, 1.)},
@@ -555,11 +558,10 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
                 0, 0, 0, words, channels_in_event);
             vector<int> hist(0x4000, 0);
             for (auto w : wf) {
-              val0 = w&0x3FFF;
-              val1 = (w>>16)&0x3FFF;
-              if (val0*val1 == 0) continue;
-              hist[val0 >> rebin_factor]++;
-              hist[val1 >> rebin_factor]++;
+              for (auto val : {w&0x3fff, (w>>16)&0x3fff}) {
+                if (val != 0 && val != 0x3fff)
+                  hist[val >> rebin_factor]++;
+              }
             }
             sv.remove_prefix(words);
             auto max_it = std::max_element(hist.begin(), hist.end());
@@ -569,7 +571,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
             counts_around_max = std::accumulate(max_start, max_end, 0);
             if (counts_around_max < fraction_around_max*counts_total) {
               fLog->Entry(MongoLog::Local,
-                  "Bd %i ch %i: %i out of %i/%i counts around max %i (step %i)",
+                  "%i.%i: %i out of %i/%i counts around max %i (step %i)",
                   bid, ch, counts_around_max, counts_total, wf.size()*2,
                   std::distance(hist.begin(), max_it)<<rebin_factor, current_step[bid][ch]);
               continue;
@@ -579,7 +581,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
             // calculated weighted average
             baseline = std::inner_product(max_start, max_end, bin_ids.begin(), 0) << rebin_factor;
             baseline /= counts_around_max;
-            bl_per_channel[bid][ch][step] = baseline;
+            bl_per_channel[bid][ch].push_back(baseline);
             current_step[bid][ch]++;
 
             if (current_step[bid][ch] < DAC_cal_points.size()) {
@@ -598,19 +600,26 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
               cal_values[bid]["slope"][ch] = slope = (C*D - E*F)/(B*C - F*F);
               cal_values[bid]["yint"][ch] = yint = (B*E - D*F)/(B*C - F*F);
               dac_values[bid][ch] = (target_baseline-yint)/slope;
+              fLog->Entry(MongoLog::Local, "%i.%i calibrated: %.2f %.1f (%x)",
+                  bid, ch, slope, yint, dac_values[bid][ch]);
               done &= false;
             } else {
               // iterate
               if (channel_finished[bid][ch] >= convergence_threshold) {
                 done &= true;
                 if (channel_finished[bid][ch]++ == convergence_threshold) {
-                  fLog->Entry(MongoLog::Local, "%i.%i converged after %i steps: %.1f", bid, ch,
-                      step, bl_per_channel[bid][ch][step]);
+                  // increment so we don't get it again next iteration
+                  fLog->Entry(MongoLog::Local, "%i.%i converged after %i steps: %.1f | %x", bid, ch,
+                      current_step[bid][ch], bl_per_channel[bid][ch].back(), dac_values[bid][ch]);
                 }
                 continue;
               }
 
-              float off_by = target_baseline - bl_per_channel[bid][ch][step];
+              float off_by = target_baseline - bl_per_channel[bid][ch].back();
+              if (off_by != off_by) { // dirty nan check
+                fLog->Entry(MongoLog::Warning, "%i.%i: NaN alert (%i %x)",
+                    bid, ch, current_step[bid][ch], dac_values[bid][ch])
+              }
               if (abs(off_by) < adjustment_threshold) {
                 channel_finished[bid][ch]++;
                 continue;
@@ -621,6 +630,8 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
               if (abs(adjustment) < min_adjustment)
                 adjustment = std::copysign(min_adjustment, adjustment);
               dac_values[bid][ch] += adjustment;
+              fLog->Entry(MongoLog::Local, "%i.%i.%i adjust %x to %x (%.1f)", bid, ch, 
+                  current_step[bid][ch], adjustment, dac_values[bid][ch], bl_per_channel[bid][ch].back());
             }
 
           } // for each channel
