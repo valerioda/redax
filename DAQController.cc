@@ -451,7 +451,6 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
   double B,C,D,E,F, slope, yint, baseline;
   double fraction_around_max = fOptions->GetDouble("baseline_fraction_around_max", 0.8);
   u_int32_t words_in_event, channel_mask, words;
-  u_int16_t val0, val1;
   int channels_in_event;
 
   for (unsigned step = 0; step < max_steps; step++) {
@@ -618,7 +617,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
               float off_by = target_baseline - bl_per_channel[bid][ch].back();
               if (off_by != off_by) { // dirty nan check
                 fLog->Entry(MongoLog::Warning, "%i.%i: NaN alert (%i %x)",
-                    bid, ch, current_step[bid][ch], dac_values[bid][ch])
+                    bid, ch, current_step[bid][ch], dac_values[bid][ch]);
               }
               if (abs(off_by) < adjustment_threshold) {
                 channel_finished[bid][ch]++;
