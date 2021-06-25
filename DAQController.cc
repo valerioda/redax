@@ -625,11 +625,11 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
               }
               done &= false;
               channel_finished[bid][ch] = std::max(0, channel_finished[bid][ch]-1);
-              int adjustment = off_by * cal_values[bid]["slope"][ch];
+              int adjustment = off_by / cal_values[bid]["slope"][ch];
               if (abs(adjustment) < min_adjustment)
                 adjustment = std::copysign(min_adjustment, adjustment);
               dac_values[bid][ch] += adjustment;
-              fLog->Entry(MongoLog::Local, "%i.%i.%i adjust %x to %x (%.1f)", bid, ch, 
+              fLog->Entry(MongoLog::Local, "%i.%i.%i adjust %i to %x (%.1f)", bid, ch, 
                   current_step[bid][ch], adjustment, dac_values[bid][ch], bl_per_channel[bid][ch].back());
             }
 
