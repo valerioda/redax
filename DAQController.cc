@@ -438,7 +438,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
   std::map<int, vector<vector<double>>> bl_per_channel;
   //std::map<int, std::map<std::string, vector<double>>> cal_values;
   std::map<int, vector<unsigned>> current_step;
-  const float adc_to_dac = -4.; // 14-bit ADC to 16-bit DAC. This isn't exact but it should be close enough
+  const float adc_to_dac = -3.; // 14-bit ADC to 16-bit DAC. This isn't exact but it should be close enough
 
   for (auto digi : digis) { // alloc ALL the things!
     bid = digi->bid();
