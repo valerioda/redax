@@ -424,7 +424,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
   int rebin_factor = fOptions->GetInt("baseline_rebin_log2", 1); // log base 2
   int bins_around_max = fOptions->GetInt("baseline_bins_around_max", 3);
   int target_baseline = fOptions->GetInt("baseline_value", 16000);
-  int min_dac = fOptions->GetInt("baseline_min_dac", 0), max_dac = fOptions->GetInt("baseline_max_dac", 
+  int min_dac = fOptions->GetInt("baseline_min_dac", 0), max_dac = fOptions->GetInt("baseline_max_dac", 1<<16);
   int bid(0);
   int triggers_per_step = fOptions->GetInt("baseline_triggers_per_step", 3);
   std::chrono::milliseconds ms_between_triggers(fOptions->GetInt("baseline_ms_between_triggers", 10));
@@ -438,7 +438,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
   std::map<int, vector<vector<double>>> bl_per_channel;
   //std::map<int, std::map<std::string, vector<double>>> cal_values;
   std::map<int, vector<unsigned>> current_step;
-  const float adc_to_dac = -4f; // 14-bit ADC to 16-bit DAC. This isn't exact but it should be close enough
+  const float adc_to_dac = -4.; // 14-bit ADC to 16-bit DAC. This isn't exact but it should be close enough
 
   for (auto digi : digis) { // alloc ALL the things!
     bid = digi->bid();
@@ -635,7 +635,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
                 int adjustment = off_by * adc_to_dac;
                 if (abs(adjustment) < min_adjustment)
                   adjustment = std::copysign(min_adjustment, adjustment);
-                dac_values[bid][ch] = std::clamp(dac_values[bid][ch] + adjustment, 0, 1<<16);
+                dac_values[bid][ch] = std::clamp(dac_values[bid][ch] + adjustment, min_dac, max_dac);
                 fLog->Entry(MongoLog::Local, "%i.%i.%i adjust %i to %x (%.1f)", bid, ch, 
                     current_step[bid][ch], adjustment, dac_values[bid][ch], bl_per_channel[bid][ch].back());
               }
