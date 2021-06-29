@@ -351,7 +351,7 @@ std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHead
   return {((rollovers<<31)+ch_time)*fClockCycle, words, 0, sv.substr(2, words-2)};
 }
 
-int V1724::BaselineStep(std::vector<uint16_t> dac_values, std::vector<int>& channel_finished, int step) {
+int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& channel_finished, int step) {
   int triggers_per_step = fOptions->GetInt("baseline_triggers_per_step", 3);
   std::chrono::milliseconds ms_between_triggers(fOptions->GetInt("baseline_ms_between_triggers", 10));
   int adjustment_threshold = fOptions->GetInt("baseline_adjustment_threshold", 10);
@@ -362,7 +362,8 @@ int V1724::BaselineStep(std::vector<uint16_t> dac_values, std::vector<int>& chan
   int min_dac = fOptions->GetInt("baseline_min_dac", 0), max_dac = fOptions->GetInt("baseline_max_dac", 1<<16);
   int counts_total(0), counts_around_max(0);
   double fraction_around_max = fOptions->GetDouble("baseline_fraction_around_max", 0.8), baseline;
-  const float adc_to_dac = -3.; // 14-bit ADC to 16-bit DAC. Not 4 because we want some damping to prevent overshoot
+  // 14-bit ADC to 16-bit DAC. Not 4 because we want some damping to prevent overshoot
+  double adc_to_dac = fOptions->GetDouble("baseline_adc_to_dac", -3.);
   uint32_t words_in_event, channel_mask, words;
   int channels_in_event;
   if (!EnsureReady(1000, 1000)) {
@@ -377,7 +378,7 @@ int V1724::BaselineStep(std::vector<uint16_t> dac_values, std::vector<int>& chan
   }
   for (int trig = 0; trig < trigs_per_step, trig++) {
     SWTrigger();
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms_between_triggers));
+    std::this_thread::sleep_for(ms_between_triggers);
   }
 
   AcquisitionStop();
