@@ -359,7 +359,9 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
   int rebin_factor = fOptions->GetInt("baseline_rebin_log2", 1); // log base 2
   int bins_around_max = fOptions->GetInt("baseline_bins_around_max", 3);
   int target_baseline = fOptions->GetInt("baseline_value", 16000);
+  // int rather than uint16_t for type promotion reasons
   int min_dac = fOptions->GetInt("baseline_min_dac", 0), max_dac = fOptions->GetInt("baseline_max_dac", 1<<16);
+  int convergence = fOptions->GetInt("baseline_convergence_threshold", 3);
   int counts_total(0), counts_around_max(0);
   double fraction_around_max = fOptions->GetDouble("baseline_fraction_around_max", 0.8), baseline;
   // 14-bit ADC to 16-bit DAC. Not 4 because we want some damping to prevent overshoot
@@ -388,7 +390,7 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   std::unique_ptr<data_packet> dp;
-  int words = 0;
+  int words_in_event = 0, words_in_channel(0);
   if ((words = Read(dp)) <= 0) {
     fLog->Entry(MongoLog::Warning, "Board %i readout error", fBID);
     return -2;
@@ -398,13 +400,13 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
     return 1;
   }
   // we now have a data packet with something in it, let's process it
+  std::vector<std::vector<int>> hist(fNChannels, std::vector<int>(1 << (14 - rebin_factor), 0));
   auto it = dp->buff.begin();
   while (it < dp->buff.end()) {
     if ((*it) >> 28 == 0xA) {
-      words = (*it)&0xFFFFFFF;
-      std::u32string_view sv(dp->buff.data() + std::distance(dp->buff.begin(), it), words);
+      std::u32string_view sv(dp->buff.data() + std::distance(dp->buff.begin(), it), (*it)&0xFFFFFFF);
       std::tie(words_in_event, channel_mask, std::ignore, std::ignore) = UnpackEventHeader(sv);
-      if (words == 4) {
+      if (words_in_event == 4) {
         it += 4;
         continue;
       }
@@ -413,68 +415,73 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
         continue;
       }
       channels_in_event = std::bitset<16>(channel_mask).count();
-      it += words;
+      it += words_in_event;
       sv.remove_prefix(4);
       for (unsigned ch = 0; ch < fNChannels; ch++) {
         if (!(channel_mask & (1 << ch))) continue;
         std::u32string_view wf;
-        std::tie(std::ignore, words, std::ignore, wf) = UnpackChannelHeader(sv,
-            0, 0, 0, words, channels_in_event);
-        vector<int> hist(0x4000, 0);
+        std::tie(std::ignore, words_in_channel, std::ignore, wf) = UnpackChannelHeader(sv,
+            0, 0, 0, words_in_event, channels_in_event);
         for (auto w : wf) {
           for (auto val : {w&0x3fff, (w>>16)&0x3fff}) {
             if (val != 0 && val != 0x3fff)
-              hist[val >> rebin_factor]++;
+              hist[ch][val >> rebin_factor]++;
           }
         }
-        sv.remove_prefix(words);
-        auto max_it = std::max_element(hist.begin(), hist.end());
-        auto max_start = std::max(max_it - bins_around_max, hist.begin());
-        auto max_end = std::min(max_it + bins_around_max+1, hist.end());
-        counts_total = std::accumulate(hist.begin(), hist.end(), 0);
-        counts_around_max = std::accumulate(max_start, max_end, 0);
-        if (counts_around_max < fraction_around_max*counts_total) {
-          fLog->Entry(MongoLog::Local,
-              "%i.%i.%i: %i out of %i/%i counts around max %i",
-              bid, ch, step, counts_around_max, counts_total, wf.size()*2,
-              std::distance(hist.begin(), max_it)<<rebin_factor);
-          continue;
-        }
-        vector<int> bin_ids(std::distance(max_start, max_end), 0);
-        std::iota(bin_ids.begin(), bin_ids.end(), std::distance(hist.begin(), max_start));
-        // calculated weighted average
-        baseline = std::inner_product(max_start, max_end, bin_ids.begin(), 0) << rebin_factor;
-        baseline /= counts_around_max;
-
-        if (channel_finished[ch] >= convergence_threshold) {
-          if (channel_finished[ch]++ == convergence_threshold) {
-            // increment so we don't get it again next iteration
-            fLog->Entry(MongoLog::Local, "%i.%i.%i converged: %.1f | %x", bid, ch,
-                step, baseline, dac_values[ch]);
-          }
-        } else {
-          float off_by = target_baseline - baseline;
-          if (off_by != off_by) { // dirty nan check
-            fLog->Entry(MongoLog::Warning, "%i.%i.%i: NaN alert (%x)",
-                bid, ch, step, dac_values[ch]);
-          }
-          if (abs(off_by) < adjustment_threshold) {
-            channel_finished[ch]++;
-            continue;
-          }
-          channel_finished[ch] = std::max(0, channel_finished[ch]-1);
-          int adjustment = off_by * adc_to_dac;
-          if (abs(adjustment) < min_adjustment)
-            adjustment = std::copysign(min_adjustment, adjustment);
-          dac_values[ch] = std::clamp(dac_values[ch] + adjustment, min_dac, max_dac);
-          fLog->Entry(MongoLog::Local, "%i.%i.%i adjust %i to %x (%.1f)", bid, ch, step, adjustment, dac_values[ch], baseline);
-        } // if converged
-
-      } // for each channel
-
+        sv.remove_prefix(words_in_channel);
+      } // for channels
     } else { // if header
-      it++;
+      ++it;
     }
   } // while in buffer
-  return 0;
+  // we split here so we actually accumulate all the events we triggered
+  // and analyze once, rather than analyze once per trigger and only keep the last one
+  for (unsigned ch = 0; ch < fNChannels; ch++) {
+    if (channel_finished[ch] >= convergence_threshold) continue;
+
+    auto max_it = std::max_element(hist[ch].begin(), hist[ch].end());
+    auto max_start = std::max(max_it - bins_around_max, hist[ch].begin());
+    auto max_end = std::min(max_it + bins_around_max + 1, hist[ch].end());
+    counts_total = std::accumulate(hist[ch].begin(), hist[ch].end(), 0);
+    counts_around_max = std::accumulate(max_start, max_end, 0);
+    if (counts_total == 0) {
+      fLog->Entry(MongoLog::Local, "%i.%i.%i: no samples", fBID, ch, step);
+      continue;
+    }
+    if (counts_around_max < fraction_around_max*counts_total) {
+      fLog->Entry(MongoLog::Local,
+          "%i.%i.%i: %i out of %i counts around max %i",
+          fBID, ch, step, counts_around_max, counts_total,
+          (max_it - hist[ch].begin())<<rebin_factor);
+      continue;
+    }
+    vector<int> bin_ids(max_end - max_start, 0);
+    std::iota(bin_ids.begin(), bin_ids.end(), max_start - hist[ch].begin());
+    // calculated weighted average
+    baseline = std::inner_product(max_start, max_end, bin_ids.begin(), 0) << rebin_factor;
+    baseline /= counts_around_max;
+
+    float off_by = target_baseline - baseline;
+    if (off_by != off_by) { // dirty nan check
+      fLog->Entry(MongoLog::Warning, "%i.%i.%i: NaN alert (%x)",
+          fBID, ch, step, dac_values[ch]);
+      continue;
+    }
+    if (abs(off_by) < adjustment_threshold) {
+      if (channel_finished[ch]++ == convergence_threshold) {
+        fLog->Entry(MongoLog::Local, "%i.%i.%i converged: %.1f | %x", fBID, ch,
+            step, baseline, dac_values[ch]);
+      }
+      continue;
+    }
+    channel_finished[ch] = std::max(0, channel_finished[ch]-1);
+    int adjustment = off_by * adc_to_dac;
+    if (abs(adjustment) < min_adjustment)
+      adjustment = std::copysign(min_adjustment, adjustment);
+    dac_values[ch] = std::clamp(dac_values[ch] + adjustment, min_dac, max_dac);
+    fLog->Entry(MongoLog::Local, "%i.%i.%i adjust %i to %x (%.1f)", fBID, ch, step, adjustment, dac_values[ch], baseline);
+
+} // for each channel
+
+return 0;
 }
