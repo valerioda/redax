@@ -125,9 +125,6 @@ bool V1724::EnsureStarted(int ntries, int tsleep){
 bool V1724::EnsureStopped(int ntries, int tsleep){
   return MonitorRegister(fAqStatusRegister, 0x4, ntries, tsleep, 0x0);
 }
-uint32_t V1724::GetAcquisitionStatus(){
-  return ReadRegister(fAqStatusRegister);
-}
 int V1724::CheckErrors(){
   auto pll = ReadRegister(fBoardFailStatRegister);
   auto ros = ReadRegister(fReadoutStatusRegister);
@@ -197,16 +194,6 @@ int V1724::WriteRegister(unsigned int reg, uint32_t value){
   // would love to confirm the write, but not all registers are read-able and you get a -1 if you try
   // and I don't feel like coding in the entire register document so we know which are which
   return 0;
-}
-
-unsigned int V1724::ReadRegister(unsigned int reg){
-  unsigned int temp;
-  int ret = 0;
-  if((ret = CAENVME_ReadCycle(fBoardHandle, fBaseAddress+reg, &temp, cvA32_U_DATA, cvD32)) != cvSuccess){
-    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%x (val) for reg 0x%04x", fBID, ret, temp, reg);
-    return 0xFFFFFFFF;
-  }
-  return temp;
 }
 
 int V1724::Read(std::unique_ptr<data_packet>& outptr){
@@ -359,7 +346,7 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
   int counts_total(0), counts_around_max(0);
   double fraction_around_max = fOptions->GetDouble("baseline_fraction_around_max", 0.8), baseline;
   // 14-bit ADC to 16-bit DAC. Not 4 because we want some damping to prevent overshoot
-  double adc_to_dac = fOptions->GetDouble("baseline_adc_to_dac", -3.), baseline(0);
+  double adc_to_dac = fOptions->GetDouble("baseline_adc_to_dac", -3.);
   uint32_t words_in_event, channel_mask, words_in_channel;
   int channels_in_event, words_read;
   if (!EnsureReady(1000, 1000)) {
@@ -372,7 +359,7 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
     fLog->Entry(MongoLog::Warning, "Board %i can't start baselines", fBID);
     return -1;
   }
-  for (int trig = 0; trig < triggers_per_step, trig++) {
+  for (int trig = 0; trig < triggers_per_step; trig++) {
     SWTrigger();
     std::this_thread::sleep_for(ms_between_triggers);
   }

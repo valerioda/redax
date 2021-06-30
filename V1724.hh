@@ -100,5 +100,19 @@ protected:
   std::chrono::nanoseconds fTotReadTime;
 };
 
+// we put these two funcs here so they get inlined
+inline uint32_t V1724::GetAcquisitionStatus(){
+  return ReadRegister(fAqStatusRegister);
+}
+
+inline unsigned int V1724::ReadRegister(unsigned int reg){
+  unsigned int temp;
+  int ret = 0;
+  if((ret = CAENVME_ReadCycle(fBoardHandle, fBaseAddress+reg, &temp, cvA32_U_DATA, cvD32)) != cvSuccess){
+    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%x (val) for reg 0x%04x", fBID, ret, temp, reg);
+    return 0xFFFFFFFF;
+  }
+  return temp;
+}
 
 #endif
