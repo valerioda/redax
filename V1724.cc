@@ -58,7 +58,7 @@ V1724::~V1724(){
   fLog->Entry(MongoLog::Local, msg.str());
 }
 
-int V1724::Init(int link, int crate, std::shared_ptr<Options>& opts) {
+int V1724::Init(int link, int crate) {
   int a = CAENVME_Init(cvV2718, link, crate, &fBoardHandle);
   if(a != cvSuccess){
     fLog->Entry(MongoLog::Warning, "Board %i failed to init, error %i handle %i link %i bdnum %i",
@@ -79,7 +79,7 @@ int V1724::Init(int link, int crate, std::shared_ptr<Options>& opts) {
     fLog->Entry(MongoLog::Local, "Board %i reset", fBID);
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  if (opts->GetInt("do_sn_check", 0) != 0) {
+  if (fOptions->GetInt("do_sn_check", 0) != 0) {
     if ((word = ReadRegister(fSNRegisterLSB)) == 0xFFFFFFFF) {
       fLog->Entry(MongoLog::Error, "Board %i couldn't read its SN lsb", fBID);
       return -1;
@@ -276,15 +276,13 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
   return blt_words;
 }
 
-int V1724::LoadDAC(std::vector<uint16_t> &dac_values){
+int V1724::LoadDAC(std::vector<uint16_t>& dac_values){
   // Loads DAC values into registers
-  for(unsigned int x=0; x<fNChannels; x++){
-    if(WriteRegister((fChDACRegister)+(0x100*x), dac_values[x])!=0){
-      fLog->Entry(MongoLog::Error, "Board %i failed writing DAC 0x%04x in channel %i",
-		  fBID, dac_values[x], x);
+  for(unsigned ch=0; ch<fNChannels; ch++){
+    if ((ReadRegister(fChStatusRegister + 0x100*ch) & 0x4) || WriteRegister(fChDACRegister + 0x100*ch, dac_values[ch])){
+      fLog->Entry(MongoLog::Error, "Board %i ch %i failed to set DAC (0x%x)", fBID, ch, dac_values[ch]);
       return -1;
     }
-
   }
   return 0;
 }

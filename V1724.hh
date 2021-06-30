@@ -25,19 +25,19 @@ class V1724{
   virtual unsigned int ReadRegister(unsigned int);
   virtual int End();
 
-  int bid() {return fBID;}
-  uint16_t SampleWidth() {return fSampleWidth;}
-  int GetClockWidth() {return fClockCycle;}
+  inline int bid() {return fBID;}
+  inline uint16_t SampleWidth() {return fSampleWidth;}
+  inline int GetClockWidth() {return fClockCycle;}
   int16_t GetADChannel() {return fArtificialDeadtimeChannel;}
 
   virtual int LoadDAC(std::vector<uint16_t>&);
-  unsigned GetNumChannels() {return fNChannels;}
+  inline unsigned GetNumChannels() {return fNChannels;}
   int SetThresholds(std::vector<uint16_t> vals);
 
   virtual std::tuple<int, int, bool, uint32_t> UnpackEventHeader(std::u32string_view);
   virtual std::tuple<int64_t, int, uint16_t, std::u32string_view> UnpackChannelHeader(std::u32string_view, long, uint32_t, uint32_t, int, int);
 
-  bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
+  inline bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
   void SetFlags(int flags) {fRegisterFlags = flags;}
   void ResetFlags() {fRegisterFlags = 1;}
   int BaselineStep(std::vector<uint16_t>&, std::vector<int>&, std::vector<double>&, int);
