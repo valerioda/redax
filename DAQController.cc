@@ -415,26 +415,28 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
    * baselines show up where you want them to. Usually the boards cooperate, sometimes they don't.
    * A large fraction of the code is dealing with when they don't.
    */
-  unsigned max_steps = fOptions->GetInt("baseline_max_steps", 20);
+  int max_steps = fOptions->GetInt("baseline_max_steps", 20);
   int convergence = fOptions->GetInt("baseline_convergence_threshold", 3);
-  std::map<int, vector<int>> channel_finished;
+  uint16_t start_dac = fOptions->GetInt("baseline_start_dac", 10000);
+  std::map<int, std::vector<int>> channel_finished;
   std::map<int, bool> board_done;
-  int ret;
+  std::map<int, std::vector<double>> bl_per_channel;
+  int bid;
 
   for (auto digi : digis) { // alloc ALL the things!
     bid = digi->bid();
-    dac_values[bid] = vector<uint16_t>(digi->GetNumChannels(), 10000); // start higher than we need to
-    channel_finished[bid] = vector<int>(digi->GetNumChannels(), 0);
+    dac_values[bid] = std::vector<uint16_t>(digi->GetNumChannels(), start_dac); // start higher than we need to
+    channel_finished[bid] = std::vector<int>(digi->GetNumChannels(), 0);
     board_done[bid] = false;
+    bl_per_channel[bid] = std::vector<double>(digi->GetNumChannels(), 0);
     digi->SetFlags(2);
   }
 
-  for (unsigned step = 0; step < max_steps; step++) {
+  for (int step = 0; step < max_steps; step++) {
     fLog->Entry(MongoLog::Local, "Beginning baseline step %i/%i", step, max_steps);
-    done = true;
     // prep
     for (auto& d : digis) {
-      bid = digi->bid();
+      bid = d->bid();
       if (board_done[bid])
         continue;
       if (d->LoadDAC(dac_values[d->bid()])) {
@@ -444,20 +446,20 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
     }
     // "After writing, the user is recommended to wait for a few seconds before
     // a new RUN to let the DAC output get stabilized" - CAEN documentation
-    std::this_thread::sleep_for(1s);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     // sleep(2) seems unnecessary after preliminary testing
 
     for (auto& d : digis) {
       int bid = d->bid();
       if (board_done[bid])
         continue;
-      if (d->BaselineStep(dac_values[bid], channel_finished[bid], step) < 0) {
+      if (d->BaselineStep(dac_values[bid], channel_finished[bid], bl_per_channel[bid], step) < 0) {
         fLog->Entry(MongoLog::Error, "Error fitting baselines");
         return -2;
       }
-      board_done[bid] = std::all_of(channel_finished[bid].begin(), channel_finished.end(), [](int v){return v >= convergence;});
+      board_done[bid] = std::all_of(channel_finished[bid].begin(), channel_finished[bid].end(), [=](int v){return v >= convergence;});
     }
-    if (std::all_of(board_done.begin(), board_done.end())) return 0;
+    if (std::all_of(board_done.begin(), board_done.end(), [](auto& p){return p.second;})) return 0;
   } // end steps
   std::string backup_bl = fOptions->GetString("baseline_fallback_mode", "fail");
   if (backup_bl == "fail") {
@@ -467,9 +469,9 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
   int fixed = fOptions->GetInt("baseline_fixed_value", 7000);
   for (auto& p : channel_finished) // (bid, vector)
     for (unsigned i = 0; i < p.second.size(); i++)
-      if (p.second[i] < convergence_threshold) {
+      if (p.second[i] < convergence) {
         fLog->Entry(MongoLog::Local, "%i.%i didn't converge, last value %.1f, last offset 0x%x",
-            p.first, i, bl_per_channel[p.first][i].back(), dac_values[p.first][i]);
+            p.first, i, bl_per_channel[p.first][i], dac_values[p.first][i]);
         if (backup_bl == "cached")
           dac_values[p.first][i] = fOptions->GetSingleDAC(p.first, i, fixed);
         else if (backup_bl == "fixed")

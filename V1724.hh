@@ -22,7 +22,7 @@ class V1724{
   virtual int Init(int, int, std::shared_ptr<Options>&);
   virtual int Read(std::unique_ptr<data_packet>&);
   virtual int WriteRegister(unsigned int, uint32_t);
-  virtual unsigned int ReadRegister(unsigned int);
+  inline virtual unsigned int ReadRegister(unsigned int);
   virtual int End();
 
   int bid() {return fBID;}
@@ -31,7 +31,6 @@ class V1724{
   int16_t GetADChannel() {return fArtificialDeadtimeChannel;}
 
   virtual int LoadDAC(std::vector<uint16_t>&);
-  void ClampDACValues(std::vector<uint16_t>&, std::map<std::string, std::vector<double>>&);
   unsigned GetNumChannels() {return fNChannels;}
   int SetThresholds(std::vector<uint16_t> vals);
 
@@ -41,7 +40,7 @@ class V1724{
   bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
   void SetFlags(int flags) {fRegisterFlags = flags;}
   void ResetFlags() {fRegisterFlags = 1;}
-  int BaselineStep(std::vector<uint16_t>&, std::vector<int>&, int);
+  int BaselineStep(std::vector<uint16_t>&, std::vector<int>&, std::vector<double>&, int);
 
   // Acquisition Control
 
@@ -54,7 +53,7 @@ class V1724{
   virtual bool EnsureStarted(int ntries, int sleep);
   virtual bool EnsureStopped(int ntries, int sleep);
   virtual int CheckErrors();
-  virtual uint32_t GetAcquisitionStatus();
+  inline virtual uint32_t GetAcquisitionStatus();
 
 protected:
   // Some values for base classes to override 
@@ -92,6 +91,7 @@ protected:
   std::chrono::nanoseconds fClockPeriod;
 
   std::shared_ptr<MongoLog> fLog;
+  std::shared_ptr<Options> fOptions;
   std::atomic_bool fError;
 
   float fBLTSafety;
