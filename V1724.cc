@@ -187,16 +187,6 @@ int V1724::GetClockCounter(uint32_t timestamp){
   return fRolloverCounter;
 }
 
-unsigned int V1724::ReadRegister(unsigned int reg){
-  unsigned int temp;
-  int ret = 0;
-  if((ret = CAENVME_ReadCycle(fBoardHandle, fBaseAddress+reg, &temp, cvA32_U_DATA, cvD32)) != cvSuccess){
-    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%x (val) for reg 0x%04x", fBID, ret, temp, reg);
-    return 0xFFFFFFFF;
-  }
-  return temp;
-}
-
 int V1724::WriteRegister(unsigned int reg, uint32_t value){
   bool echo = fRegisterFlags & 0x1;
   int ret = 0;
@@ -208,6 +198,16 @@ int V1724::WriteRegister(unsigned int reg, uint32_t value){
   // would love to confirm the write, but not all registers are read-able and you get a -1 if you try
   // and I don't feel like coding in the entire register document so we know which are which
   return 0;
+}
+
+unsigned int V1724::ReadRegister(unsigned int reg){
+  unsigned int temp;
+  int ret = 0;
+  if((ret = CAENVME_ReadCycle(fBoardHandle, fBaseAddress+reg, &temp, cvA32_U_DATA, cvD32)) != cvSuccess){
+    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%x (val) for reg 0x%04x", fBID, ret, temp, reg);
+    return 0xFFFFFFFF;
+  }
+  return temp;
 }
 
 int V1724::Read(std::unique_ptr<data_packet>& outptr){
