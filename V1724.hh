@@ -22,7 +22,7 @@ class V1724{
   virtual int Init(int, int, std::shared_ptr<Options>&);
   virtual int Read(std::unique_ptr<data_packet>&);
   virtual int WriteRegister(unsigned int, uint32_t);
-  inline virtual unsigned int ReadRegister(unsigned int);
+  virtual unsigned int ReadRegister(unsigned int);
   virtual int End();
 
   int bid() {return fBID;}
@@ -53,7 +53,7 @@ class V1724{
   virtual bool EnsureStarted(int ntries, int sleep);
   virtual bool EnsureStopped(int ntries, int sleep);
   virtual int CheckErrors();
-  inline virtual uint32_t GetAcquisitionStatus();
+  virtual uint32_t GetAcquisitionStatus();
 
 protected:
   // Some values for base classes to override 
@@ -99,20 +99,5 @@ protected:
   int16_t fArtificialDeadtimeChannel;
   std::chrono::nanoseconds fTotReadTime;
 };
-
-// we put these two funcs here so they get inlined
-inline uint32_t V1724::GetAcquisitionStatus(){
-  return ReadRegister(fAqStatusRegister);
-}
-
-inline unsigned int V1724::ReadRegister(unsigned int reg){
-  unsigned int temp;
-  int ret = 0;
-  if((ret = CAENVME_ReadCycle(fBoardHandle, fBaseAddress+reg, &temp, cvA32_U_DATA, cvD32)) != cvSuccess){
-    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%x (val) for reg 0x%04x", fBID, ret, temp, reg);
-    return 0xFFFFFFFF;
-  }
-  return temp;
-}
 
 #endif

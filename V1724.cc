@@ -125,6 +125,10 @@ bool V1724::EnsureStarted(int ntries, int tsleep){
 bool V1724::EnsureStopped(int ntries, int tsleep){
   return MonitorRegister(fAqStatusRegister, 0x4, ntries, tsleep, 0x0);
 }
+uint32_t V1724::GetAcquisitionStatus(){
+  return ReadRegister(fAqStatusRegister);
+}
+
 int V1724::CheckErrors(){
   auto pll = ReadRegister(fBoardFailStatRegister);
   auto ros = ReadRegister(fReadoutStatusRegister);
@@ -181,6 +185,16 @@ int V1724::GetClockCounter(uint32_t timestamp){
   }
   fLastClock = timestamp;
   return fRolloverCounter;
+}
+
+unsigned int V1724::ReadRegister(unsigned int reg){
+  unsigned int temp;
+  int ret = 0;
+  if((ret = CAENVME_ReadCycle(fBoardHandle, fBaseAddress+reg, &temp, cvA32_U_DATA, cvD32)) != cvSuccess){
+    fLog->Entry(MongoLog::Warning, "Board %i read returned: %i (ret) 0x%x (val) for reg 0x%04x", fBID, ret, temp, reg);
+    return 0xFFFFFFFF;
+  }
+  return temp;
 }
 
 int V1724::WriteRegister(unsigned int reg, uint32_t value){
