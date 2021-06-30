@@ -19,7 +19,7 @@ class V1724{
   V1724(std::shared_ptr<MongoLog>&, std::shared_ptr<Options>&, int, unsigned=0);
   virtual ~V1724();
 
-  virtual int Init(int, int, std::shared_ptr<Options>&);
+  virtual int Init(int, int);
   virtual int Read(std::unique_ptr<data_packet>&);
   virtual int WriteRegister(unsigned int, uint32_t);
   virtual unsigned int ReadRegister(unsigned int);

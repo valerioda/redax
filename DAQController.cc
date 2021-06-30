@@ -61,7 +61,7 @@ int DAQController::Arm(std::shared_ptr<Options>& options){
         digi = std::make_shared<f1724>(fLog, fOptions, d.board, 0);
       else
         digi = std::make_shared<V1724>(fLog, fOptions, d.board, d.vme_address);
-      if (digi->Init(d.link, d.crate, fOptions))
+      if (digi->Init(d.link, d.crate))
         throw std::runtime_error("Board init failed");
       fDigitizers[d.link].emplace_back(digi);
       num_boards++;
