@@ -415,7 +415,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
    * baselines show up where you want them to. Usually the boards cooperate, sometimes they don't.
    * A large fraction of the code is dealing with when they don't.
    */
-  int max_steps = fOptions->GetInt("baseline_max_steps", 20);
+  int max_steps = fOptions->GetInt("baseline_max_steps", 30);
   int convergence = fOptions->GetInt("baseline_convergence_threshold", 3);
   uint16_t start_dac = fOptions->GetInt("baseline_start_dac", 10000);
   std::map<int, std::vector<int>> channel_finished;
