@@ -357,7 +357,8 @@ void DAQController::StatusUpdate(mongocxx::collection* collection) {
 
 void DAQController::InitLink(std::vector<std::shared_ptr<V1724>>& digis,
     std::map<int, std::vector<uint16_t>>& dac_values, int& ret) {
-  std::string baseline_mode = fOptions->GetString("baseline_dac_mode", "fixed");
+  std::string baseline_mode = fOptions->GetString("baseline_dac_mode", "n/a");
+  baseline_mode = baseline_mode == "n/a" ? fOptions->GetNestedString("baseline_dac_mode."+fOptions->Detector(), "fixed") : baseline_mode;
   int nominal_dac = fOptions->GetInt("baseline_fixed_value", 7000);
   if (baseline_mode == "fit") {
     if ((ret = FitBaselines(digis, dac_values)) < 0) {

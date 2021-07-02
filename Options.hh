@@ -78,7 +78,9 @@ public:
   long int GetLongInt(std::string, long int=-1);
   double GetDouble(std::string, double=-1);
   std::string GetString(std::string, std::string="");
+  std::string GetNestedString(std::string, std::string="");
   std::string Hostname() {return fHostname;}
+  std::string Detector() {return fDetector;}
 
   std::vector<BoardType> GetBoards(std::string);
   std::vector<RegisterType> GetRegisters(int, bool=false);
