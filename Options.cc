@@ -286,7 +286,7 @@ int Options::GetV1495Opts(std::map<std::string, int>& ret) {
     return -1;
   }
   return 1;
-}`
+}
 
 int Options::GetCrateOpt(CrateOptions &ret){
   if ((ret.pulser_freq = GetNestedInt("V2718."+fDetector+".pulser_freq", -1)) == -1) {
