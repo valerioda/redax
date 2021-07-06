@@ -1,16 +1,13 @@
 #include "Options.hh"
 #include "DAXHelpers.hh"
 #include "MongoLog.hh"
+#include <algorithm>
 
 #include <bsoncxx/array/view.hpp>
 #include <bsoncxx/types.hpp>
 #include <bsoncxx/json.hpp>
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/exception/exception.hpp>
-
-#ifndef max
-#define max(a,b) ((a) > (b) ? (a) : (b))
-#endif
 
 Options::Options(std::shared_ptr<MongoLog>& log, std::string options_name, std::string hostname,
           mongocxx::collection* opts_collection, std::shared_ptr<mongocxx::pool>& pool,
@@ -24,7 +21,7 @@ Options::Options(std::shared_ptr<MongoLog>& log, std::string options_name, std::
   fDAC_collection = fDB["dac_calibration"];
   int ref = -1;
   bool load_ref = GetString("baseline_dac_mode", "") == "cached" || GetNestedString("baseline_dac_mode."+fDetector, "") == "cached" || GetString("baseline_fallback_mode", "") == "cached";
-  if (load_ref && ((ref = max(GetInt("baseline_reference_run", -1), GetNestedInt("baseline_reference_run."+fDetector, -1))) == -1)) {
+  if (load_ref && ((ref = std::max(GetInt("baseline_reference_run", -1), GetNestedInt("baseline_reference_run."+fDetector, -1))) == -1)) {
     fLog->Entry(MongoLog::Error, "Please specify a reference run to use cached baselines");
     throw std::runtime_error("Config invalid");
   }
