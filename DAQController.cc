@@ -100,7 +100,7 @@ int DAQController::Arm(std::shared_ptr<Options>& options){
     return -1;
   } else
     fLog->Entry(MongoLog::Debug, "Digitizer programming successful");
-  if (fOptions->GetString("baseline_dac_mode") == "fit") fOptions->UpdateDAC(dac_values);
+  if (fOptions->GetString("baseline_dac_mode") == "fit" || fOptions->GetNestedString("baseline_dac_mode."+fOptions->Detector() == "fit") fOptions->UpdateDAC(dac_values);
 
   for(auto& link : fDigitizers ) {
     for(auto& digi : link.second){
