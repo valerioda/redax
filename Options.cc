@@ -20,8 +20,9 @@ Options::Options(std::shared_ptr<MongoLog>& log, std::string options_name, std::
   fDB = (*fClient)[dbname];
   fDAC_collection = fDB["dac_calibration"];
   int ref = -1;
-  bool load_ref = GetString("baseline_dac_mode", "") == "cached" || GetNestedString("baseline_dac_mode."+fDetector, "") == "cached" || GetString("baseline_fallback_mode", "") == "cached";
-  if (load_ref && ((ref = std::max(GetInt("baseline_reference_run", -1), GetNestedInt("baseline_reference_run."+fDetector, -1))) == -1)) {
+  bool load_ref = GetString("baseline_dac_mode") == "cached" || GetNestedString("baseline_dac_mode."+fDetector) == "cached" || GetString("baseline_fallback_mode") == "cached";
+  if (load_ref && ((ref = std::max(GetInt("baseline_reference_run"), GetNestedInt("baseline_reference_run."+fDetector))) == -1)) {
+    // -1 is default return
     fLog->Entry(MongoLog::Error, "Please specify a reference run to use cached baselines");
     throw std::runtime_error("Config invalid");
   }
