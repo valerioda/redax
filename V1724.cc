@@ -458,7 +458,9 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
           fBID, ch, step, dac_values[ch]);
       dac_values[ch] = fOptions->GetInt("baseline_start_dac", 10000); // reset this channel, dun goof'd
       channel_finished[ch] = 0;
-    } else if (abs(off_by) < adjustment_threshold && ++channel_finished[ch] == convergence) {
+    } else if (abs(off_by) < adjustment_threshold) {
+      ++channel_finished[ch];
+      if (channel_finished[ch] == convergence)
         fLog->Entry(MongoLog::Local, "%i.%i.%i converged: %.1f | %x", fBID, ch, step, baseline, dac_values[ch]);
     } else {
       channel_finished[ch] = std::max(0, channel_finished[ch]-1);
