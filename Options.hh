@@ -90,7 +90,7 @@ public:
   int GetCrateOpt(CrateOptions &ret);
   int GetHEVOpt(HEVOptions &ret);
   int16_t GetChannel(int, int);
-  int GetNestedInt(std::string, int);
+  int GetNestedInt(std::string, int=-1);
   std::vector<uint16_t> GetThresholds(int);
   int GetFaxOptions(fax_options_t&);
   uint16_t GetSingleDAC(int, int, uint16_t);
