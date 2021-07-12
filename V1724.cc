@@ -438,9 +438,8 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
     counts_around_max = std::accumulate(max_start, max_end, 0);
     if (counts_total == 0) {
       fLog->Entry(MongoLog::Local, "%i.%i.%i: no samples (%x)", fBID, ch, step, dac_values[ch]);
-      continue;
-    }
-    if (counts_around_max < fraction_around_max*counts_total) {
+      // this will produce a nan which is fine because this causes a reset on that channel
+    } else if (counts_around_max < fraction_around_max*counts_total) {
       fLog->Entry(MongoLog::Local, "%i.%i.%i: %i out of %i counts around max %i",
           fBID, ch, step, counts_around_max, counts_total, (max_it - hist[ch].begin())<<rebin_factor);
       continue;
@@ -454,7 +453,8 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
 
     float off_by = target_baseline - baseline;
     if (off_by != off_by) { // dirty nan check
-      fLog->Entry(MongoLog::Warning, "%i.%i.%i: NaN alert (%x)",
+      // log at the debug rather than warning level because we understand where NaNs come from and how to handle them
+      fLog->Entry(MongoLog::Debug, "%i.%i.%i: NaN alert (%x)",
           fBID, ch, step, dac_values[ch]);
       dac_values[ch] = fOptions->GetInt("baseline_start_dac", 10000); // reset this channel, dun goof'd
       channel_finished[ch] = 0;

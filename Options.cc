@@ -33,6 +33,7 @@ Options::Options(std::shared_ptr<MongoLog>& log, std::string options_name, std::
       fLog->Entry(MongoLog::Warning, "Could not load baseline reference run %i", ref);
       throw std::runtime_error("Can't load cached baselines");
     }
+    fLog->Entry(MongoLog::Local, "Loaded cached baselines from run %i", ref);
   }
 }
 

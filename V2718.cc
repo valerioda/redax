@@ -37,6 +37,16 @@ int V2718::SendStartSignal(){
 
   // Set the output register
   unsigned int data = 0x0;
+  int ret;
+  if ((ret = CAENVME_ReadRegister(fBoardHandle, cvOutRegSet, &data)) != cvSuccess) {
+    fLog->Entry(MongoLog::Local, "Could not read V2718 output? ret %i", ret);
+    // fail?
+  } else {
+    fLog->Entry(MongoLog::Local, "Current V2718 output status: %x", data);
+    if (data & cvOut0Bit) fLog->Entry(MongoLog::Local, "Orphaned S-IN?");
+  }
+
+  data = 0;
   if(fCopts.neutron_veto)            //n_veto soonTM
     data+=cvOut4Bit;
   if(fCopts.led_trigger)
@@ -110,8 +120,9 @@ int V2718::SendStopSignal(bool end){
 
   // do we somehow have an orphaned S-IN?
   unsigned int data = 0x0;
-  if (CAENVME_ReadRegister(fBoardHandle, cvOutRegSet, &data) != cvSuccess) {
-    fLog->Entry(MongoLog::Local, "Could not read V2718 output?");
+  int ret;
+  if ((ret = CAENVME_ReadRegister(fBoardHandle, cvOutRegSet, &data)) != cvSuccess) {
+    fLog->Entry(MongoLog::Local, "Could not read V2718 output? ret %i", ret);
     // fail?
   } else {
     fLog->Entry(MongoLog::Local, "Current V2718 output status: %x", data);
