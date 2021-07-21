@@ -248,7 +248,7 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
       for (auto& b : xfer_buffers) delete[] b.first;
       return -1;
     }
-    if (nb > request_bytes) fLog->Entry(MongoLog::Message,
+    if (nb > request_bytes) fLog->Entry(alloc_bytes > nb ? MongoLog::Debug : MongoLog::Warning,
         "Board %i got %x more bytes than asked for (headroom %i)",
         fBID, nb-request_bytes, alloc_bytes-nb);
 
