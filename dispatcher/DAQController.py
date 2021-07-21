@@ -275,12 +275,11 @@ class DAQController():
             if (dt := (now()-self.last_nuke).total_seconds()) > self.hv_nuclear_timeout:
                 self.log.critical('There\'s only one way to be sure')
                 self.control_detector(detector='tpc', command='stop', force=True)
-                self.hypervisor.tactical_nuclear_option()
-                self.last_nuke = now()
+                if self.hypervisor.tactical_nuclear_option(self.mongo.is_linked_mode()):
+                    self.last_nuke = now()
             else:
                 #self.control_detector(detector=detector, command='stop')
                 self.log.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')
-            #return
 
         if command is None: # not specified, we figure out it here
             command_times = [(cmd,doc[detector]) for cmd,doc in self.last_command.items()]
@@ -312,8 +311,8 @@ class DAQController():
                         if (dt := (now()-self.last_nuke).total_seconds()) > self.hv_nuclear_timeout:
                             self.control_detector(detector='tpc', command='stop', force=True)
                             self.log.critical('There\'s only one way to be sure')
-                            self.hypervisor.tactical_nuclear_option()
-                            self.last_nuke = now()
+                            if self.hypervisor.tactical_nuclear_option(self.mongo.is_linked_mode()):
+                                self.last_nuke = now()
                         else:
                             self.control_detector(detector=detector, command='stop')
                             self.log.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')

@@ -25,15 +25,10 @@ The environment variables MONGO_PASSWORD and RUNS_MONGO_PASSWORD must be set!
 """
 
 def _all(values, target):
-    ret = len(values) > 0
-    for value in values:
-        if value != target:
-            return False
-    return True
+    return len(values > 0 and all([v == target for v in values])
 
 def now():
     return datetime.datetime.now(pytz.utc)
-    #return datetime.datetime.utcnow() # wrong?
 
 # Communicate between various parts of dispatcher that no new run was determined
 NO_NEW_RUN = -1
@@ -82,7 +77,7 @@ class MongoConnect():
         # How long a node can be timing out or missed an ack before it gets fixed (TPC only)
         self.timeout_take_action = int(config['TimeoutActionThreshold'])
 
-        # how long to give the CC to start the run
+        # how long to give the CC to start the run. The +1 is so we check _after_ the CC should have acted
         self.cc_start_wait = int(config['StartCmdDelay']) + 1
 
         # Which control keys do we look for?
@@ -203,6 +198,7 @@ class MongoConnect():
                     'pll_unlocks': 0,
                     'number': -1}
                 for k in self.dc}
+        phys_stat = {}
         for detector in self.latest_status.keys():
             # detector = logical
             statuses = {}
@@ -211,6 +207,8 @@ class MongoConnect():
             run_nums = []
             for doc in self.latest_status[detector]['readers'].values():
                 phys_det = self.host_config[doc['host']]
+                if phys_det not in phys_stat:
+                    phys_stat[phys_det] = []
                 try:
                     aggstat[phys_det]['rate'] += doc['rate']
                     aggstat[phys_det]['buff'] += doc['buffer_size']
@@ -220,48 +218,30 @@ class MongoConnect():
                     self.log.debug(f'Rate calculation ran into {type(e)}: {e}')
                     pass
 
-                try:
-                    status = DAQ_STATUS(doc['status'])
-                    if self.is_timeout(doc, now_time):
-                        status = DAQ_STATUS.TIMEOUT
-                except Exception as e:
-                    self.log.debug(f'Ran into {type(e)}, daq is in timeout. {e}')
-                    status = DAQ_STATUS.UNKNOWN
-
+                status = self.extract_status(doc, now_time)
                 statuses[doc['host']] = status
+                phys_stat[phys_det].append(status)
 
             for doc in self.latest_status[detector]['controller'].values():
                 phys_det = self.host_config[doc['host']]
-                try:
-                    status = DAQ_STATUS(doc['status'])
-
-                    if self.is_timeout(doc, now_time):
-                        status = DAQ_STATUS.TIMEOUT
-                except Exception as e:
-                    self.log.debug(f'Setting status to unknown because of {type(e)}: {e}')
-                    status = DAQ_STATUS.UNKNOWN
-
+                status = self.extract_status(doc, now_time)
                 statuses[doc['host']] = status
+                doc['status'] = status
                 modes.append(doc.get('mode', 'none'))
                 run_nums.append(doc.get('number', None))
                 aggstat[phys_det]['status'] = status
                 aggstat[phys_det]['mode'] = modes[-1]
                 aggstat[phys_det]['number'] = run_nums[-1]
+                phys_stat[phys_det].append(status)
 
             mode = modes[0]
             run_num = run_nums[0]
-            if not _all(modes, mode):
-                self.log.error(f'Got differing modes: {modes}')
-                # TODO handle better?
-                ret = 1
-                continue
-            if not _all(run_nums, run_num):
-                self.log.error(f'Got differing run numbers: {run_nums}')
-                # TODO handle better?
-                ret = 1
-                continue
-
-            if mode != 'none': # readout is "active":
+            if not _all(modes, mode) or not _all(run_nums, run_num):
+                self.log.error(f'No quorum? {modes}, {run_nums}')
+                status_list = [DAQ_STATUS.UNKNOWN]
+                mode = 'none'
+                run_num = -1
+            elif mode != 'none': # readout is "active":
                 a,b = self.get_hosts_for_mode(mode)
                 active = a + b
                 status_list = [v for k,v in statuses.items() if k in active]
@@ -269,20 +249,7 @@ class MongoConnect():
                 status_list = list(statuses.values())
 
             # Now we aggregate the statuses
-            # First, the "or" statuses
-            for stat in ['ARMING','ERROR','TIMEOUT','UNKNOWN']:
-                if DAQ_STATUS[stat] in status_list:
-                    status = DAQ_STATUS[stat]
-                    break
-            else:
-                # then the "and" statuses
-                for stat in ['IDLE','ARMED','RUNNING']:
-                    if _all(status_list, DAQ_STATUS[stat]):
-                        status = DAQ_STATUS[stat]
-                        break
-                else:
-                    # otherwise
-                    status = DAQ_STATUS.UNKNOWN
+            status = self.combine_statuses(status_list)
 
             self.latest_status[detector]['status'] = status
             self.latest_status[detector]['number'] = run_num
@@ -293,7 +260,27 @@ class MongoConnect():
         except Exception as e:
             self.log.error(f'DB snafu? Couldn\'t update aggregate status. '
                             f'{type(e)}, {e}')
+
+        self.physcal_status = phys_stat
         return ret
+
+    def combine_statuses(self, status_list):
+        # First, the "or" statuses
+        for stat in ['ARMING','ERROR','TIMEOUT','UNKNOWN']:
+            if DAQ_STATUS[stat] in status_list:
+                return DAQ_STATUS[stat]
+        # then the "and" statuses
+        for stat in ['IDLE','ARMED','RUNNING']:
+            if _all(status_list, DAQ_STATUS[stat]):
+                return DAQ_STATUS[stat]
+        return DAQ_STATUS.UNKNOWN
+
+    def extract_status(self, doc, now_time):
+        try:
+            return DAQ_STATUS.TIMEOUT if self.is_timeout(doc, now_time) else DAQ_STATUS(doc['status'])
+        except Exception as e:
+            self.log.debug(f'Setting status to unknown for {doc.get("host", "unknown")} because of {type(e)}: {e}')
+            return DAQ_STATUS.UNKNOWN
 
     def is_timeout(self, doc, t):
         """
@@ -344,20 +331,30 @@ class MongoConnect():
             self.log.debug(f'get_wanted_state failed due to {type(e)} {e}')
             return None
 
+    def is_linked_mode(self):
+        """
+        Are we in a linked configuration for this control iteration?
+        """
+        # self.dc has the physical detectors, self.latest_status has the logical detectors
+        return len(self.dc.keys()) != len(self.latest_status.keys())
+
     def is_linked(self, a, b):
         """
         Check if the detectors are in a compatible linked configuration.
         """
         mode_a = self.goal_state[a]["mode"]
         mode_b = self.goal_state[b]["mode"]
-        doc_a = self.collections['options'].find_one({'name': mode_a})
-        doc_b = self.collections['options'].find_one({'name': mode_b})
-        detectors_a = doc_a['detector']
-        detectors_b = doc_b['detector']
+        if mode_a != mode_b:
+            # shortcut to lessen the load on the db
+            return False
+
+        # we don't need to pull the whole combined document because the 'detector' field is at the top level
+        detectors = self.collections['options'].find_one({'name': mode_a}, {'detector': 1})['detector']
 
         # Check if the linked detectors share the same run mode and
         # if they are both present in the detectors list of that mode
-        return mode_a == mode_b and a in detectors_b and b in detectors_a
+        # also no "tpc_muon_veto" bullshit, it must be ['tpc', 'muon_veto']
+        return isinstance(detectors, list) and a in detectors and b in detectors
 
     def get_super_detector(self):
         """
