@@ -25,7 +25,7 @@ The environment variables MONGO_PASSWORD and RUNS_MONGO_PASSWORD must be set!
 """
 
 def _all(values, target):
-    return len(values > 0 and all([v == target for v in values])
+    return len(values) > 0 and all([v == target for v in values])
 
 def now():
     return datetime.datetime.now(pytz.utc)
