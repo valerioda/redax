@@ -14,7 +14,7 @@ public:
   f1724(std::shared_ptr<MongoLog>&, std::shared_ptr<Options>&, int, unsigned);
   virtual ~f1724();
 
-  virtual int Init(int, int, std::shared_ptr<Options>&);
+  virtual int Init(int, int);
   virtual int Read(std::unique_ptr<data_packet>&);
   virtual int WriteRegister(unsigned, unsigned);
   virtual unsigned ReadRegister(unsigned);
