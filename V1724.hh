@@ -49,9 +49,9 @@ class V1724{
   virtual int AcquisitionStop(bool=false);
   virtual int SWTrigger();
   virtual int Reset();
-  virtual bool EnsureReady(int ntries, int sleep);
-  virtual bool EnsureStarted(int ntries, int sleep);
-  virtual bool EnsureStopped(int ntries, int sleep);
+  virtual bool EnsureReady(int=1000, int=1000);
+  virtual bool EnsureStarted(int=1000, int=1000);
+  virtual bool EnsureStopped(int=1000, int=1000);
   virtual int CheckErrors();
   virtual uint32_t GetAcquisitionStatus();
 

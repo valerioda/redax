@@ -123,28 +123,17 @@ int DAQController::Start(){
   if(fOptions->GetInt("run_start", 0) == 0){
     for(auto& link : fDigitizers ){
       for(auto& digi : link.second){
-
-        // Ensure digitizer is ready to start
-        if(digi->EnsureReady(1000, 1000)!= true){
-          fLog->Entry(MongoLog::Warning, "Digitizer not ready to start after sw command sent");
+        if(digi->EnsureReady()!= true || digi->SoftwareStart() || digi->EnsureStarted() != true){
+          fLog->Entry(MongoLog::Warning, "Board %i not started?", digi->bid());
           return -1;
-        }
-
-        // Send start command
-        digi->SoftwareStart();
-
-        // Ensure digitizer is started
-        if(digi->EnsureStarted(1000, 1000)!=true){
-          fLog->Entry(MongoLog::Warning,
-              "Timed out waiting for acquisition to start after SW start sent");
-          return -1;
-        }
+        } else
+          fLog->Entry(MongoLog::Local, "Board %i started", digi->bid());
       }
     }
   } else {
     for (auto& link : fDigitizers)
       for (auto& digi : link.second)
-        if (digi->SINStart() || !digi->EnsureReady(1000,1000))
+        if (digi->SINStart() || !digi->EnsureReady())
           fLog->Entry(MongoLog::Warning, "Board %i not ready to start?", digi->bid());
         else
           fLog->Entry(MongoLog::Local, "Board %i is ARMED and DANGEROUS", digi->bid());
@@ -159,6 +148,7 @@ int DAQController::Stop(){
   int counter = 0;
   bool one_still_running = false;
   do{
+    // wait around for up to 10x100ms for the threads to finish reading
     one_still_running = false;
     for (auto& p : fRunning) one_still_running |= p.second;
     if (one_still_running) std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -170,7 +160,7 @@ int DAQController::Stop(){
       digi->AcquisitionStop(true);
 
       // Ensure digitizer is stopped
-      if(digi->EnsureStopped(1000, 1000) != true){
+      if(digi->EnsureStopped() != true){
 	fLog->Entry(MongoLog::Warning,
 		    "Timed out waiting for %i to stop after SW stop sent", digi->bid());
           //return -1;
