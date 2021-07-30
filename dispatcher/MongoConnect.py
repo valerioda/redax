@@ -198,7 +198,7 @@ class MongoConnect():
                     'pll_unlocks': 0,
                     'number': -1}
                 for k in self.dc}
-        phys_stat = {}
+        phys_stat = {k: [] for k in self.dc}
         for detector in self.latest_status.keys():
             # detector = logical
             statuses = {}
@@ -207,8 +207,6 @@ class MongoConnect():
             run_nums = []
             for doc in self.latest_status[detector]['readers'].values():
                 phys_det = self.host_config[doc['host']]
-                if phys_det not in phys_stat:
-                    phys_stat[phys_det] = []
                 try:
                     aggstat[phys_det]['rate'] += doc['rate']
                     aggstat[phys_det]['buff'] += doc['buffer_size']
@@ -261,7 +259,7 @@ class MongoConnect():
             self.log.error(f'DB snafu? Couldn\'t update aggregate status. '
                             f'{type(e)}, {e}')
 
-        self.physcal_status = phys_stat
+        self.physical_status = phys_stat
         return ret
 
     def combine_statuses(self, status_list):
