@@ -109,11 +109,11 @@ class MongoLog_nT : public MongoLog {
 public:
   // subclass to support the managed logging
   MongoLog_nT(std::shared_ptr<mongocxx::pool>& pool, std::string dbname, std::string host) :
-    MongoLog(0, pool, dbname, "/daq_common/logs", host) {}
+    MongoLog(0, pool, dbname, "/daq_common2/logs", host) {}
   virtual ~MongoLog_nT() {}
 
 protected:
   virtual std::string LogFileName(struct tm*);
   virtual std::experimental::filesystem::path OutputDirectory(struct tm*);
 };
-#endif
+#endif // _MONGOLOG_HH_ defined
