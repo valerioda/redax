@@ -364,8 +364,7 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
       uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
     // (also only works on c++20 because std::move, but still)
     buffers[i]->clear();
-    auto f = compressors[fCompressor]
-    wsize[i] = f(uncompressed, out_buffer[i], uncompressed_size[i]);
+    wsize[i] = compressors.at(fCompressor)(uncompressed, out_buffer[i], uncompressed_size[i]);
     uncompressed.clear();
     fBytesPerChunk[int(std::log2(uncompressed_size[i]))]++;
     fOutputBufferSize -= uncompressed_size[i];
