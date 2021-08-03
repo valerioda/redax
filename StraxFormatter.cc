@@ -34,7 +34,7 @@ long compress_lz4(std::shared_ptr<std::string>& in, std::shared_ptr<std::string>
       0,   /* autoflush */
       { 0, 0, 0 },  /* reserved, must be set to 0 */
   };
-  max_compressed_size = LZ4F_compressFrameBound(size_in, &kPrefs);
+  long max_compressed_size = LZ4F_compressFrameBound(size_in, &kPrefs);
   out = std::make_shared<std::string>(max_compressed_size, 0);
   return LZ4F_compressFrame(out->data(), max_compressed_size, in->data(), size_in, &kPrefs);
 }
@@ -44,7 +44,7 @@ long compress_none(std::shared_ptr<std::string>& in, std::shared_ptr<std::string
   return size_in;
 }
 
-long compress_devnull(std::shared_ptr<std::string>& in, std::shared_ptr<std::string>& out, long& size_in) {
+long compress_devnull(std::shared_ptr<std::string>&, std::shared_ptr<std::string>&, long& size_in) {
   // this function is why we pass long&, so we can trick the calling function into deleting the data
   // without writing it out first, because the uncompressed size is the determining factor
   size_in = 0;
@@ -355,7 +355,6 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
   std::string uncompressed;
   std::shared_ptr<std::string> out_buffer[3];
   int wsize[3];
-  long max_compressed_size = 0;
 
   for (int i = 0; i < 2; i++) {
     if (buffers[i]->size() == 0) continue;
@@ -365,7 +364,8 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
       uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
     // (also only works on c++20 because std::move, but still)
     buffers[i]->clear();
-    wsize[i] = compressors[fCompressor](uncompressed, out_buffer[i], uncompressed_size[i]);
+    auto f = compressors[fCompressor]
+    wsize[i] = f(uncompressed, out_buffer[i], uncompressed_size[i]);
     uncompressed.clear();
     fBytesPerChunk[int(std::log2(uncompressed_size[i]))]++;
     fOutputBufferSize -= uncompressed_size[i];
