@@ -224,7 +224,7 @@ There are various configuration options for the strax output that must be set.
 ```python
 {
   "strax_chunk_overlap": 0.5,
-  "strax_output_path": "/data/xenon/raw/xenonnt",
+  "strax_output_path": "/data/xenon/raw",
   "strax_chunk_length": 5.0,
   "strax_fragment_payload_bytes": 220,
   "strax_buffer_num_chunks": 2,
@@ -236,12 +236,12 @@ There are various configuration options for the strax output that must be set.
 | Option | Description |
 | ---- | ---- |
 | strax_chunk_overlap | Float. Defines the overlap period between strax chunks in seconds. Make is at least some few times larger than your typical event length. In any case it should be larger than your largest expected event. Default 0.5. |
-| strax_chunk_length | Float. Length of each strax chunk in seconds. There's some balance required here. It should be short enough that strax can process reasonably online, as it waits for each chunk to finish then loads it at once (the size should be digestable). But it shouldn't be so short that it needlessly micro-segments the data. Order of 5-15 seconds seems reasonable at the time of writing. Default 5. |
+| strax_chunk_length | Float. Length of each strax chunk in seconds. There's some balance required here. It should be short enough that strax can process reasonably online, as it waits for each chunk to finish then loads it at once (the size should be digestable). But it shouldn't be so short that it needlessly micro-segments the data. Somewhere vaguely around 10 seconds seems reasonable, in production we use anything between 5 and 21. Default 5. |
 | strax_fragment_payload_bytes | Int. How long are the fragments? In general this should be long enough that it definitely covers the vast majority of your SPE pulses. Our SPE pulses are ~100 samples, so the default value of 220 bytes (2 bytes per sample) provides a small amount of overhead. Undefined behavior if the value is odd, possibly undefined if it isn't a multiple of 4. |
 | strax_output_path | String. Where should we write data? This must be a locally mounted data store. Redax will handle sub-directories so just provide the top-level directory where all the live data should go (e.g. `/data/live`). |
-| strax_buffer_num_chunks | Int. How many full chunks should get buffered? Setting this at 1 or lower may cause data loss, and greater than 2 usually means you need more memory in your readout machine. A value of 2 means that if chunks 5 and 6 are buffered, as soon as something in chunk 7 shows up, chunk 5 is dumped to disk. |
+| strax_buffer_num_chunks | Int. How many full chunks should get buffered before writing? Setting this at 1 or lower may cause data loss, and greater than 2 usually means you need more memory in your readout machine. A value of 2 means that if chunks 5 and 6 are buffered, as soon as something in chunk 7 shows up, chunk 5 is dumped to disk. |
 | strax_chunk_phase_limit | Int. Sometimes pulses will show up at the processing stage late (or somehow behind the rest of them). If a pulse is this many chunks behind (or out of phase with) the chunks currently being buffered, log a warning to the database. |
-| compressor | lz4/blosc. Which algorithm to use in compressing the chunks. Both have comparable squeeziness, but blosc is slightly faster. Blosc does have an issue where the size must fit into 31 bits, but you have to be running long and hard to hit this. Default lz4 |
+| compressor | lz4/blosc/none/delete. Which algorithm to use in compressing the chunks. LZ4 is squeezier but blosc is slightly faster. Blosc does have an issue where the size must fit into 31 bits, but you have to be running long and hard to hit this. "none" and "delete" are self-explanatory. Default lz4 |
 
 ## Channel Map
 
