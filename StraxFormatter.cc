@@ -352,27 +352,30 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
 
   std::list<std::string>* buffers[2] = {&fChunks[chunk_i], &fOverlaps[chunk_i]};
   long uncompressed_size[3] = {0L, 0L, 0L};
-  std::string uncompressed;
-  std::shared_ptr<std::string> out_buffer[3];
-  int wsize[3];
+  std::shared_ptr<std::string> uncompressed;
+  std::shared_ptr<std::string> compressed[3];
+  long wsize[3];
 
   for (int i = 0; i < 2; i++) {
     if (buffers[i]->size() == 0) continue;
     uncompressed_size[i] = buffers[i]->size()*fFullFragmentSize;
-    uncompressed.reserve(uncompressed_size[i]);
+    uncompressed = std::make_shared<std::string>();
+    uncompressed->reserve(uncompressed_size[i]);
     for (auto it = buffers[i]->begin(); it != buffers[i]->end(); it++)
       uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
     // (also only works on c++20 because std::move, but still)
     buffers[i]->clear();
-    wsize[i] = compressors.at(fCompressor)(uncompressed, out_buffer[i], uncompressed_size[i]);
-    uncompressed.clear();
+    wsize[i] = compressors[fCompressor](uncompressed, compressed[i], uncompressed_size[i]);
     fBytesPerChunk[int(std::log2(uncompressed_size[i]))]++;
     fOutputBufferSize -= uncompressed_size[i];
   }
+  uncompressed.reset();
   fChunks.erase(chunk_i);
   fOverlaps.erase(chunk_i);
 
-  out_buffer[2] = out_buffer[1];
+  // copy from n_post to n+1_pre
+  // we used shared_ptr because we don't want any actual copying to happen
+  compressed[2] = compressed[1];
   wsize[2] = wsize[1];
   uncompressed_size[2] = uncompressed_size[1];
   auto names = GetChunkNames(chunk_i);
@@ -384,9 +387,9 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
     if (!fs::exists(output_dir_temp))
       fs::create_directory(output_dir_temp);
     std::ofstream writefile(filename_temp, std::ios::binary);
-    writefile.write(out_buffer[i]->data(), wsize[i]);
+    writefile.write(compressed[i]->data(), wsize[i]);
     writefile.close();
-    out_buffer[i].reset();
+    compressed[i].reset();
 
     auto output_dir = GetDirectoryPath(names[i]);
     auto filename = GetFilePath(names[i]);
