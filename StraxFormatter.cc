@@ -362,10 +362,10 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
     uncompressed = std::make_shared<std::string>();
     uncompressed->reserve(uncompressed_size[i]);
     for (auto it = buffers[i]->begin(); it != buffers[i]->end(); it++)
-      uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
+      *uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
     // (also only works on c++20 because std::move, but still)
     buffers[i]->clear();
-    wsize[i] = compressors[fCompressor](uncompressed, compressed[i], uncompressed_size[i]);
+    wsize[i] = compressors->at(fCompressor)(uncompressed, compressed[i], uncompressed_size[i]);
     fBytesPerChunk[int(std::log2(uncompressed_size[i]))]++;
     fOutputBufferSize -= uncompressed_size[i];
   }
