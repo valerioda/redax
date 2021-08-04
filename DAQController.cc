@@ -313,7 +313,7 @@ void DAQController::StatusUpdate(mongocxx::collection* collection) {
   std::map<int, int> retmap;
   std::pair<long, long> buf{0,0};
   int rate = fDataRate;
-  fDataRate = 0;
+  fDataRate -= fDataRate; // atomic nonsense, increment and decrement ops are better than assignment
   {
     const std::lock_guard<std::mutex> lg(fMutex);
     for (auto& p : fFormatters) {
