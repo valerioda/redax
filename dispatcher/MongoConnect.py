@@ -281,7 +281,7 @@ class MongoConnect(object):
             self.logger.debug(f'{host} last reported {int(dt)} sec ago')
             ret = ret or True
         if has_ackd is not None and t - has_ackd > self.timeout_take_action:
-            host not in self.host_is_timeout:
+            if host not in self.host_is_timeout:
                 self.logger.critical(f'{host} hasn\'t ackd a command from {int(t-has_ackd)} sec ago')
                 self.host_is_timeout.add(host)
             if self.host_config[host] == 'tpc':
