@@ -4,25 +4,6 @@ import threading
 import time
 import pytz
 
-"""
-MongoDB Connectivity Class for XENONnT DAQ Dispatcher
-D. Coderre, 12. Mar. 2019
-
-Brief: This code handles the mongo connectivity for both the DAQ 
-databases (the ones used for system-wide communication) and the 
-runs database. 
-
-Requires: Initialize it with the following config:
-{
-  "ControlDatabaseURI":   {string}, mongo URI with '%s' symbol in place of pw,
-  "ControlDatabaseName":  {string} the name of the control database,
-  "RunsDatabaseURI":      {string}, same, but for runs DB,
-  "RunsDatabaseName":     {string} the name of the runs database,
-  "Hostname":             {string} this is what you call your dispatcher
-}
-
-The environment variables MONGO_PASSWORD and RUNS_MONGO_PASSWORD must be set!
-"""
 
 def _all(values, target):
     return len(values) > 0 and all([v == target for v in values])
@@ -33,13 +14,20 @@ def now():
 # Communicate between various parts of dispatcher that no new run was determined
 NO_NEW_RUN = -1
 
+class MongoConnect(object):
+    """
+    MongoDB Connectivity Class for XENONnT DAQ Dispatcher
+    D. Coderre, 12. Mar. 2019
+    D. Masson, 2019-2021
+    S. di Pede, 2020-2021
 
-def now():
-    return datetime.datetime.now(pytz.utc)
+    Brief: This code handles the mongo connectivity for both the DAQ 
+    databases (the ones used for system-wide communication) and the 
+    runs database. 
 
-class MongoConnect():
+    """
 
-    def __init__(self, config, daq_config, log, control_mc, runs_mc, hypervisor, testing=False):
+    def __init__(self, config, daq_config, logger, control_mc, runs_mc, hypervisor, testing=False):
 
         # Define DB connectivity. Log is separate to make it easier to split off if needed
         dbn = config['ControlDatabaseName']
@@ -91,6 +79,7 @@ class MongoConnect():
 
         # How often can we restart hosts?
         self.hypervisor_host_restart_timeout = int(config['HypervisorHostRestartTimeout'])
+        self.host_is_timeout = set()
 
         self.digi_type = 'V17' if not testing else 'f17'
         self.cc_type = 'V2718' if not testing else 'f2718'
@@ -125,7 +114,7 @@ class MongoConnect():
                 self.host_config[controller] = detector
                 self.hv_timeout_fix[controller] = now()
 
-        self.log = log
+        self.logger = logger
         self.run = True
         self.event = threading.Event()
         self.command_thread = threading.Thread(target=self.process_commands)
@@ -158,7 +147,7 @@ class MongoConnect():
                                                                     sort=[('_id', -1)])
                     dc[detector]['controller'][host] = doc
         except Exception as e:
-            self.log.error(f'Got error while getting update: {type(e)}: {e}')
+            self.logger.error(f'Got error while getting update: {type(e)}: {e}')
             return None
 
         self.latest_status = dc
@@ -213,7 +202,7 @@ class MongoConnect():
                     aggstat[phys_det]['pll_unlocks'] += doc.get('pll', 0)
                 except Exception as e:
                     # This is not really important but it's nice if we have it
-                    self.log.debug(f'Rate calculation ran into {type(e)}: {e}')
+                    self.logger.debug(f'Rate calculation ran into {type(e)}: {e}')
                     pass
 
                 status = self.extract_status(doc, now_time)
@@ -235,7 +224,7 @@ class MongoConnect():
             mode = modes[0]
             run_num = run_nums[0]
             if not _all(modes, mode) or not _all(run_nums, run_num):
-                self.log.error(f'No quorum? {modes}, {run_nums}')
+                self.logger.error(f'No quorum? {modes}, {run_nums}')
                 status_list = [DAQ_STATUS.UNKNOWN]
                 mode = 'none'
                 run_num = -1
@@ -256,7 +245,7 @@ class MongoConnect():
         try:
             self.collections['aggregate_status'].insert_many(aggstat.values())
         except Exception as e:
-            self.log.error(f'DB snafu? Couldn\'t update aggregate status. '
+            self.logger.error(f'DB snafu? Couldn\'t update aggregate status. '
                             f'{type(e)}, {e}')
 
         self.physical_status = phys_stat
@@ -277,7 +266,7 @@ class MongoConnect():
         try:
             return DAQ_STATUS.TIMEOUT if self.is_timeout(doc, now_time) else DAQ_STATUS(doc['status'])
         except Exception as e:
-            self.log.debug(f'Setting status to unknown for {doc.get("host", "unknown")} because of {type(e)}: {e}')
+            self.logger.debug(f'Setting status to unknown for {doc.get("host", "unknown")} because of {type(e)}: {e}')
             return DAQ_STATUS.UNKNOWN
 
     def is_timeout(self, doc, t):
@@ -289,10 +278,12 @@ class MongoConnect():
         has_ackd = self.host_ackd_command(host)
         ret = False
         if dt > self.timeout:
-            self.log.debug(f'{host} last reported {int(dt)} sec ago')
+            self.logger.debug(f'{host} last reported {int(dt)} sec ago')
             ret = ret or True
         if has_ackd is not None and t - has_ackd > self.timeout_take_action:
-            self.log.critical(f'{host} hasn\'t ackd a command from {int(t-has_ackd)} sec ago')
+            host not in self.host_is_timeout:
+                self.logger.critical(f'{host} hasn\'t ackd a command from {int(t-has_ackd)} sec ago')
+                self.host_is_timeout.add(host)
             if self.host_config[host] == 'tpc':
                 dt = (now() - self.hv_timeout_fix[host]).total_seconds()
                 if dt > self.hypervisor_host_restart_timeout:
@@ -300,8 +291,10 @@ class MongoConnect():
                     self.hypervisor.handle_timeout(host)
                     self.hv_timeout_fix[host] = now()
                 else:
-                    self.log.debug(f'Not restarting {host}, timeout at {int(dt)}')
+                    self.logger.debug(f'Not restarting {host}, timeout at {int(dt)}')
             ret = ret or True
+        if not ret and host in self.host_is_timeout:
+            self.host_is_timeout.discard(host)
         return ret
 
     def get_wanted_state(self):
@@ -317,7 +310,7 @@ class MongoConnect():
                     doc = self.collections['incoming_commands'].find_one(
                             {'key': f'{detector}.{key}'}, sort=[('_id', -1)])
                     if doc is None:
-                        self.log.error(f'No key {key} for {detector}???')
+                        self.logger.error(f'No key {key} for {detector}???')
                         return None
                     latest_settings[detector][doc['field']] = doc['value']
                     if latest is None or doc['time'] > latest:
@@ -326,7 +319,7 @@ class MongoConnect():
             self.goal_state = latest_settings
             return self.goal_state
         except Exception as e:
-            self.log.debug(f'get_wanted_state failed due to {type(e)} {e}')
+            self.logger.debug(f'get_wanted_state failed due to {type(e)} {e}')
             return None
 
     def is_linked_mode(self):
@@ -343,6 +336,7 @@ class MongoConnect():
         mode_a = self.goal_state[a]["mode"]
         mode_b = self.goal_state[b]["mode"]
         if mode_a != mode_b:
+            self.logger.debug(f'{a} and {b} are not linked ({mode_a}/{mode_b})')
             # shortcut to lessen the load on the db
             return False
 
@@ -352,7 +346,12 @@ class MongoConnect():
         # Check if the linked detectors share the same run mode and
         # if they are both present in the detectors list of that mode
         # also no "tpc_muon_veto" bullshit, it must be ['tpc', 'muon_veto']
-        return isinstance(detectors, list) and a in detectors and b in detectors
+        if isinstance(detectors, list) and a in detectors and b in detectors:
+            self.logger.debug(f'{a} and {b} are linked ({mode_a}/{detectors})')
+            return True
+        else:
+            self.logger.debug(f'{a} and {b} aren\'t link?? How this happen?? {mode_a} {detectors}')
+            return False
 
     def get_super_detector(self):
         """
@@ -436,7 +435,7 @@ class MongoConnect():
                 {'$project': {'_id': 0, 'description': 0, 'includes': 0, 'subconfig': 0}},
                 ]))[0]
         except Exception as e:
-            self.log.error("Got a %s exception in doc pulling: %s" % (type(e), e))
+            self.logger.error("Got a %s exception in doc pulling: %s" % (type(e), e))
         return None
 
     def get_hosts_for_mode(self, mode, detector=None):
@@ -445,12 +444,12 @@ class MongoConnect():
         """
         if mode is None or mode == 'none':
             if detector is None:
-                self.log.error('No mode, no detector? wtf?')
+                self.logger.error('No mode, no detector? wtf?')
                 return [], []
             return (list(self.latest_status[detector]['readers'].keys()),
                     list(self.latest_status[detector]['controller'].keys()))
         if (doc := self.get_run_mode(mode)) is None:
-            self.log.error('How did this happen?')
+            self.logger.error('How did this happen?')
             return [], []
         cc = []
         hostlist = []
@@ -465,10 +464,10 @@ class MongoConnect():
         try:
             cursor = self.collections["run"].find({},{'number': 1}).sort("number", -1).limit(1)
         except Exception as e:
-            self.log.error(f'Database is having a moment? {type(e)}, {e}')
+            self.logger.error(f'Database is having a moment? {type(e)}, {e}')
             return NO_NEW_RUN
         if cursor.count() == 0:
-            self.log.info("wtf, first run?")
+            self.logger.info("wtf, first run?")
             return 0
         return list(cursor)[0]['number']+1
 
@@ -476,13 +475,13 @@ class MongoConnect():
         """
         Sets the 'end' field of the run doc to the time when the STOP command was ack'd
         """
-        self.log.info(f"Updating run {number} with end time ({detectors})")
+        self.logger.info(f"Updating run {number} with end time ({detectors})")
         if number == -1:
             return
         try:
             time.sleep(0.5) # this number depends on the CC command polling time
             if (endtime := self.get_ack_time(detectors, 'stop') ) is None:
-                self.log.debug(f'No end time found for run {number}')
+                self.logger.debug(f'No end time found for run {number}')
                 endtime = now() -datetime.timedelta(seconds=1)
             query = {"number": int(number), "end": None, 'detectors': detectors}
             updates = {"$set": {"end": endtime}}
@@ -490,7 +489,7 @@ class MongoConnect():
                 updates["$push"] = {"tags": {"name": "_messy", "user": "daq",
                     "date": now()}}
             if self.collections['run'].update_one(query, updates).modified_count == 1:
-                self.log.debug('Update successful')
+                self.logger.debug('Update successful')
                 rate = {}
                 for doc in self.collections['aggregate_status'].aggregate([
                     {'$match': {'number': number}},
@@ -513,9 +512,9 @@ class MongoConnect():
                 if str(number) in self.run_start_cache:
                     del self.run_start_cache[str(number)]
             else:
-                self.log.debug('No run updated?')
+                self.logger.debug('No run updated?')
         except Exception as e:
-            self.log.error(f"Database having a moment, hope this doesn't crash. {type(e)}, {e}")
+            self.logger.error(f"Database having a moment, hope this doesn't crash. {type(e)}, {e}")
         return
 
     def get_ack_time(self, detector, command, recurse=True):
@@ -531,12 +530,12 @@ class MongoConnect():
         if dt > 30: # TODO make this a config value
             if recurse:
                 # No way we found the correct command here, maybe we're too soon
-                self.log.debug(f'Most recent ack for {detector}-{command} is {dt:.1f}?')
+                self.logger.debug(f'Most recent ack for {detector}-{command} is {dt:.1f}?')
                 time.sleep(2) # if in doubt
                 return self.get_ack_time(detector, command, False)
             else:
                 # Welp
-                self.log.debug(f'No recent ack time for {detector}-{command}')
+                self.logger.debug(f'No recent ack time for {detector}-{command}')
                 return None
         return doc['acknowledged'][cc]
 
@@ -549,10 +548,10 @@ class MongoConnect():
         for host_list in hosts:
             for h in host_list:
                 if h not in ls['readers'] and h not in ls['controller']:
-                    self.log.error(f'Trying to issue a {command} to {detector}/{h}?')
+                    self.logger.error(f'Trying to issue a {command} to {detector}/{h}?')
                     host_list.remove(h)
         if command == 'stop' and not self.detector_ackd_command(detector, 'stop'):
-            self.log.error(f"{detector} hasn't ack'd its last stop, let's not flog a dead horse")
+            self.logger.error(f"{detector} hasn't ack'd its last stop, let's not flog a dead horse")
             if not force:
                 return 1
         try:
@@ -584,10 +583,10 @@ class MongoConnect():
             with self.q_mutex:
                 self.command_queue += docs
         except Exception as e:
-            self.log.debug(f'SendCommand ran into {type(e)}, {e})')
+            self.logger.debug(f'SendCommand ran into {type(e)}, {e})')
             return -1
         else:
-            self.log.debug(f'Queued {command} for {detector}')
+            self.logger.debug(f'Queued {command} for {detector}')
             self.event.set()
         return 0
 
@@ -611,7 +610,7 @@ class MongoConnect():
                         outgoing.insert_one(self.command_queue.pop(0))
             except Exception as e:
                 dt = 10
-                self.log.error(f"DB down? {type(e)}, {e}")
+                self.logger.error(f"DB down? {type(e)}, {e}")
             self.event.clear()
             self.event.wait(dt)
 
@@ -636,7 +635,7 @@ class MongoConnect():
         if command is not None:
             q['command'] = command
         if (doc := self.collections['outgoing_commands'].find_one(q, sort=sort)) is None:
-            self.log.error('No previous command found?')
+            self.logger.error('No previous command found?')
             return True
         # we can't naively use everything in the hosts field, because we might be transitioning
         # out of linked mode, and there might be "garbage" in the host list because someone
@@ -646,7 +645,7 @@ class MongoConnect():
         hosts_in_doc = set(doc['host'])
         hosts_ignored = hosts_in_doc - hosts_this_detector
         if len(hosts_ignored):
-            self.log.warning(f'Ignoring hosts: {hosts_ignored}')
+            self.logger.warning(f'Ignoring hosts: {hosts_ignored}')
         # so we only loop over the intersection of this detector's hosts and the doc's hosts
         for h in hosts_this_detector & hosts_in_doc:
             if doc['acknowledged'][h] == 0:
@@ -655,13 +654,13 @@ class MongoConnect():
 
     def log_error(self, message, priority, etype):
         #Start by logging the error localy
-        self.log.info(message)
+        self.logger.info(message)
         # Note that etype allows you to define timeouts.
         nowtime = now()
         if ( (etype in self.error_sent and self.error_sent[etype] is not None) and
              (etype in self.error_timeouts and self.error_timeouts[etype] is not None) and 
              (nowtime-self.error_sent[etype]).total_seconds() <= self.error_timeouts[etype]):
-            self.log.debug("Could log error, but still in timeout for type %s"%etype)
+            self.logger.debug("Could log error, but still in timeout for type %s"%etype)
             return
         self.error_sent[etype] = nowtime
         try:
@@ -671,8 +670,8 @@ class MongoConnect():
                 "priority": self.loglevels[priority]
             })
         except Exception as e:
-            self.log.error(f'Database error, can\'t issue error message: {type(e)}, {e}')
-        self.log.info("Error message from dispatcher: %s" % (message))
+            self.logger.error(f'Database error, can\'t issue error message: {type(e)}, {e}')
+        self.logger.info("Error message from dispatcher: %s" % (message))
         return
 
     def get_run_start(self, number):
@@ -684,7 +683,7 @@ class MongoConnect():
         try:
             doc = self.collections['run'].find_one({"number": number}, {"start": 1})
         except Exception as e:
-            self.log.error(f'Database is having a moment: {type(e)}, {e}')
+            self.logger.error(f'Database is having a moment: {type(e)}, {e}')
             return None
         if doc is not None and 'start' in doc:
             self.run_start_cache[str(number)] = doc['start'].replace(tzinfo=pytz.utc)
@@ -694,7 +693,7 @@ class MongoConnect():
     def insert_run_doc(self, detector):
 
         if (number := self.get_next_run_number()) == NO_NEW_RUN:
-            self.log.error("DB having a moment")
+            self.logger.error("DB having a moment")
             return -1
         # the rundoc gets the physical detectors, not the logical
         detectors = self.latest_status[detector]['detectors']
@@ -735,7 +734,7 @@ class MongoConnect():
         try:
             start_time = self.get_ack_time(detector, 'start')
         except Exception as e:
-            self.log.error('Couldn\'t find start time ack')
+            self.logger.error('Couldn\'t find start time ack')
             start_time = None
 
         if start_time is None:
@@ -748,6 +747,6 @@ class MongoConnect():
         try:
             self.collections['run'].insert_one(run_doc)
         except Exception as e:
-            self.log.error(f'Database having a moment: {type(e)}, {e}')
+            self.logger.error(f'Database having a moment: {type(e)}, {e}')
             return -1
         return None
