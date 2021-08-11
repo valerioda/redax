@@ -422,7 +422,7 @@ class MongoConnect(object):
         try:
             if self.collections['options'].count_documents({'name':
                 {'$in': base_doc['includes']}}) != len(base_doc['includes']):
-                self.log_error("At least one subconfig for mode '%s' doesn't exist" % mode, "warn", "warn")
+                self.log_error("At least one subconfig for mode '%s' doesn't exist" % mode, "WARNING", "WARNING")
                 return None
             return list(self.collections["options"].aggregate([
                 {'$match': {'name': mode}},
