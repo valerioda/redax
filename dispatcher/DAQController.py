@@ -4,25 +4,24 @@ import enum
 import pytz
 from daqnt import DAQ_STATUS
 
-"""
-DAQ Controller Brain Class
-D. Coderre, 12. Mar. 2019
-D. Masson, 06 Apr 2020
-S. di Pede, 17 Mar 2021
-
-Brief: This code handles the logic of what the dispatcher does when. It takes in 
-aggregated status updates and commands from the mongo connector and decides if
-any action needs to be taken to get the DAQ into the target state. It also handles the
-resetting of runs (the ~hourly stop/start) during normal operations.
-"""
-
 
 def now():
     return datetime.datetime.now(pytz.utc)
 
 class DAQController():
+    """
+    DAQ Controller Brain Class
+    D. Coderre, 12. Mar. 2019
+    D. Masson, 06 Apr 2020
+    S. di Pede, 17 Mar 2021
 
-    def __init__(self, config, daq_config, mongo_connector, log, hypervisor):
+    Brief: This code handles the logic of what the dispatcher does when. It takes in 
+    aggregated status updates and commands from the mongo connector and decides if
+    any action needs to be taken to get the DAQ into the target state. It also handles the
+    resetting of runs (the ~hourly stop/start) during normal operations.
+    """
+
+    def __init__(self, config, daq_config, mongo_connector, logger, hypervisor):
 
         self.mongo = mongo_connector
         self.hypervisor = hypervisor
@@ -51,7 +50,7 @@ class DAQController():
         self.hv_nuclear_timeout = int(config['HypervisorNuclearTimeout'])
         self.last_nuke = now()
 
-        self.log = log
+        self.logger = logger
         self.time_between_commands = int(config['TimeBetweenCommands'])
         self.can_force_stop={k:True for k in detectors}
 
@@ -104,20 +103,20 @@ class DAQController():
                 if latest_status[det]['status'] in active_states:
                     # Check before if the status is UNKNOWN and it is maybe timing out
                     if latest_status[det]['status'] == DAQ_STATUS.UNKNOWN:
-                        self.log.info(f"The status of {det} is unknown, check timeouts")
+                        self.logger.info(f"The status of {det} is unknown, check timeouts")
                         self.check_timeouts(detector=det)
                     # Otherwise stop the detector
                     else:
-                        self.log.info(f"Sending stop command to {det}")
+                        self.logger.info(f"Sending stop command to {det}")
                         self.stop_detector_gently(detector=det)
                 # Deal separately with the TIMEOUT and ERROR statuses, by stopping the detector if needed
                 elif latest_status[det]['status'] == DAQ_STATUS.TIMEOUT:
-                    self.log.info(f"The {det} is in timeout, check timeouts")
+                    self.logger.info(f"The {det} is in timeout, check timeouts")
                     # TODO update
                     self.handle_timeout(detector=det)
 
                 elif latest_status[det]['status'] == DAQ_STATUS.ERROR:
-                   self.log.info(f"The {det} has error, sending stop command")
+                   self.logger.info(f"The {det} has error, sending stop command")
                    self.control_detector(command='stop', detector=det, force=self.can_force_stop[det])
                    self.can_force_stop[det]=False
                 else:
@@ -127,39 +126,39 @@ class DAQController():
             # The detector should be ACTIVE (RUNNING)
             else: #goal_state[det]['active'] == 'true':
                 if latest_status[det]['status'] == DAQ_STATUS.RUNNING:
-                    self.log.info(f"The {det} is running")
+                    self.logger.info(f"The {det} is running")
                     self.check_run_turnover(detector=det)
                     # TODO does this work properly?
                     if latest_status[det]['mode'] != goal_state[det]['mode']:
                         self.control_detector(command='stop', detector=det)
                 # ARMED, start the run
                 elif latest_status[det]['status'] == DAQ_STATUS.ARMED:
-                    self.log.info(f"The {det} is armed, sending start command")
+                    self.logger.info(f"The {det} is armed, sending start command")
                     self.control_detector(command='start', detector=det)
                 # ARMING, check if it is timing out
                 elif latest_status[det]['status'] == DAQ_STATUS.ARMING:
-                    self.log.info(f"The {det} is arming, check timeouts")
-                    self.log.debug(f"Checking the {det} timeouts")
+                    self.logger.info(f"The {det} is arming, check timeouts")
+                    self.logger.debug(f"Checking the {det} timeouts")
                     self.check_timeouts(detector=det, command='arm')
                 # UNKNOWN, check if it is timing out
                 elif latest_status[det]['status'] == DAQ_STATUS.UNKNOWN:
-                    self.log.info(f"The status of {det} is unknown, check timeouts")
-                    self.log.debug(f"Checking the {det} timeouts")
+                    self.logger.info(f"The status of {det} is unknown, check timeouts")
+                    self.logger.debug(f"Checking the {det} timeouts")
                     self.check_timeouts(detector=det)
 
                 # Maybe the detector is IDLE, we should arm a run
                 elif latest_status[det]['status'] == DAQ_STATUS.IDLE:
-                    self.log.info(f"The {det} is idle, sending arm command")
+                    self.logger.info(f"The {det} is idle, sending arm command")
                     self.control_detector(command='arm', detector=det)
 
                 # Deal separately with the TIMEOUT and ERROR statuses, by stopping the detector if needed
                 elif latest_status[det]['status'] == DAQ_STATUS.TIMEOUT:
-                    self.log.info(f"The {det} is in timeout, check timeouts")
-                    self.log.debug("Checking %s timeouts", det)
+                    self.logger.info(f"The {det} is in timeout, check timeouts")
+                    self.logger.debug("Checking %s timeouts", det)
                     self.handle_timeout(detector=det)
 
                 elif latest_status[det]['status'] == DAQ_STATUS.ERROR:
-                    self.log.info(f"The {det} has error, sending stop command")
+                    self.logger.info(f"The {det} has error, sending stop command")
                     self.control_detector(command='stop', detector=det, force=self.can_force_stop[det])
                     self.can_force_stop[det]=False
                 else:
@@ -214,7 +213,7 @@ class DAQController():
             gs = self.goal_state
             if command == 'arm':
                 if self.one_detector_arming:
-                    self.log.info('Another detector already arming, can\'t arm %s' % detector)
+                    self.logger.info('Another detector already arming, can\'t arm %s' % detector)
                     # this leads to run number overlaps
                     return
                 readers, cc = self.mongo.get_hosts_for_mode(gs[detector]['mode'])
@@ -239,7 +238,7 @@ class DAQController():
                 if ls[detector]['status'] in [DAQ_STATUS.ARMING, DAQ_STATUS.ARMED]:
                     # this was the arming detector
                     self.one_detector_arming = False
-            self.log.debug(f'Sending {command.upper()} to {detector}')
+            self.logger.debug(f'Sending {command.upper()} to {detector}')
             if self.mongo.send_command(command, hosts, gs[detector]['user'],
                     detector, gs[detector]['mode'], delay, force):
                 # failed
@@ -254,7 +253,7 @@ class DAQController():
                 return
 
         else:
-            self.log.debug('Can\'t send %s to %s, timeout at %i/%i' % (
+            self.logger.debug('Can\'t send %s to %s, timeout at %i/%i' % (
                 command, detector, dt, self.timeouts[command]))
 
     def check_timeouts(self, detector, command=None):
@@ -273,21 +272,20 @@ class DAQController():
         # something bad happened and we start from scratch again
         if self.missed_arm_cycles[detector]>self.max_arm_cycles and detector=='tpc':
             if (dt := (now()-self.last_nuke).total_seconds()) > self.hv_nuclear_timeout:
-                self.log.critical('There\'s only one way to be sure')
+                self.logger.critical('There\'s only one way to be sure')
                 self.control_detector(detector='tpc', command='stop', force=True)
-                self.hypervisor.tactical_nuclear_option()
-                self.last_nuke = now()
+                if self.hypervisor.tactical_nuclear_option(self.mongo.is_linked_mode()):
+                    self.last_nuke = now()
             else:
                 #self.control_detector(detector=detector, command='stop')
-                self.log.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')
-            #return
+                self.logger.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')
 
         if command is None: # not specified, we figure out it here
             command_times = [(cmd,doc[detector]) for cmd,doc in self.last_command.items()]
             command = sorted(command_times, key=lambda x : x[1])[-1][0]
-            self.log.debug(f'Most recent command for {detector} is {command}')
+            self.logger.debug(f'Most recent command for {detector} is {command}')
         else:
-            self.log.debug(f'Checking {command} timeout for {detector}')
+            self.logger.debug(f'Checking {command} timeout for {detector}')
 
         dt = (time_now - self.last_command[command][detector]).total_seconds()
 
@@ -295,7 +293,7 @@ class DAQController():
         local_timeouts['stop'] = self.timeouts['stop']*(self.error_stop_count[detector]+1)
 
         if dt < local_timeouts[command]:
-            self.log.debug('%i is within the %i second timeout for a %s command' %
+            self.logger.debug('%i is within the %i second timeout for a %s command' %
                     (dt, local_timeouts[command], command))
         else:
             # timing out, maybe send stop?
@@ -311,16 +309,16 @@ class DAQController():
                     if detector == 'tpc':
                         if (dt := (now()-self.last_nuke).total_seconds()) > self.hv_nuclear_timeout:
                             self.control_detector(detector='tpc', command='stop', force=True)
-                            self.log.critical('There\'s only one way to be sure')
-                            self.hypervisor.tactical_nuclear_option()
-                            self.last_nuke = now()
+                            self.logger.critical('There\'s only one way to be sure')
+                            if self.hypervisor.tactical_nuclear_option(self.mongo.is_linked_mode()):
+                                self.last_nuke = now()
                         else:
                             self.control_detector(detector=detector, command='stop')
-                            self.log.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')
+                            self.logger.debug(f'Nuclear timeout at {int(dt)}/{self.hv_nuclear_timeout}')
                     self.error_stop_count[detector] = 0
                 else:
                     self.control_detector(detector=detector, command='stop')
-                    self.log.debug(f'Working on a stop counter for {detector}')
+                    self.logger.debug(f'Working on a stop counter for {detector}')
                     self.error_stop_count[detector] += 1
             else:
                 self.mongo.log_error(
@@ -353,13 +351,13 @@ class DAQController():
         number = self.latest_status[detector]['number']
         start_time = self.mongo.get_run_start(number)
         if start_time is None:
-            self.log.debug(f'No start time for {number}?')
+            self.logger.debug(f'No start time for {number}?')
             return
         time_now = now()
         run_length = int(self.goal_state[detector]['stop_after'])*60
         run_duration = (time_now - start_time).total_seconds()
-        self.log.debug('Checking run turnover for %s: %i/%i' % (detector, run_duration, run_length))
+        self.logger.debug('Checking run turnover for %s: %i/%i' % (detector, run_duration, run_length))
         if run_duration > run_length:
-            self.log.info('Stopping run for %s' % detector)
+            self.logger.info('Stopping run for %s' % detector)
             self.control_detector(detector=detector, command='stop')
 
