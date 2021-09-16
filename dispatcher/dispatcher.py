@@ -4,9 +4,11 @@ import argparse
 import os
 import daqnt
 import json
+import subprocess
 
 from MongoConnect import MongoConnect
 from DAQController import DAQController
+from hypervisor import Hypervisor
 
 def main():
 
@@ -30,8 +32,8 @@ def main():
     # Declare necessary classes
     sh = daqnt.SignalHandler()
     SlackBot = daqnt.DaqntBot(os.environ['SLACK_KEY'])
-    Hypervisor = daqnt.Hypervisor(control_mc[config['ControlDatabaseName']], logger,
-            daq_config, vme_config, control_inputs=config['ControlKeys'].split(), sh=sh,
+    Hypervisor = Hypervisor(control_mc[config['ControlDatabaseName']], logger,
+            daq_config, vme_config, control_inputs=config['ControlKeys'].split(),
             testing=args.test, slackbot=SlackBot)
     MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor, args.test)
     DAQControl = DAQController(config, daq_config, MongoConnector, logger, Hypervisor)
@@ -41,7 +43,12 @@ def main():
 
     sleep_period = int(config['PollFrequency'])
 
-    logger.info('Dispatcher starting up')
+    try:
+        commit = subprocess.run('git log -n 1 --pretty=oneline'.split(), capture_output=True).stdout.decode().split(' ')[0]
+    except Exception as e:
+        logger.debug(f'Couldn\'t get commit hash: {type(e)}, {e}')
+        commit = 'unknown'
+    logger.info(f'Dispatcher starting on commit: {commit}')
 
     while sh.event.is_set() == False:
         sh.event.wait(sleep_period)
