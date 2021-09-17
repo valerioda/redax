@@ -2,7 +2,6 @@ import time
 import socket
 import subprocess
 import datetime
-import threading
 import daqnt
 import pytz
 import typing as ty
@@ -34,7 +33,6 @@ class Hypervisor(object):
         :param vme_crates: a dict of {number: address} VME crates to control
         :param detector: detector (either of 'tpc', 'muon_veto', or 'neutron_veto') this HV controls
         :param control_inputs: the list of control handles the dispatcher uses
-        :param sh: optional signal handler.
         :param slackbot: optional slackbot messaging class
         :param testing: testing
         """
@@ -60,9 +58,6 @@ class Hypervisor(object):
         self.testing = testing
         self.logger.info(f'HV v{self.__version__} started')
 
-    def __del__(self):
-        self.event.set()
-
     def run_over_ssh(self, address: str, cmd: str, rets: list) -> None:
         """
         Runs a command via ssh
@@ -74,8 +69,8 @@ class Hypervisor(object):
         command = "ssh " + address + ' ' + cmd
         cp = subprocess.run(command, shell=True, capture_output=True)
         ret = {'retcode': cp.returncode,
-                'stdout': cp.stdout.decode() if cp.stdout else '',
-                'stderr': cp.stderr.decode() if cp.stderr else ''}
+               'stdout': cp.stdout.decode() if cp.stdout else '',
+               'stderr': cp.stderr.decode() if cp.stderr else ''}
         rets.append(ret)
 
     def vme_control(self, crate: ty.Union[str, int], state: str) -> ty.Union[int, str]:
