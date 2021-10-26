@@ -36,7 +36,7 @@ class V1724{
   int SetThresholds(std::vector<uint16_t> vals);
 
   virtual std::tuple<int, int, bool, uint32_t> UnpackEventHeader(std::u32string_view);
-  virtual std::tuple<int64_t, int, uint16_t, std::u32string_view> UnpackChannelHeader(std::u32string_view, long, uint32_t, uint32_t, int, int);
+  virtual std::tuple<int64_t, int, uint16_t, std::u32string_view> UnpackChannelHeader(std::u32string_view, long, uint32_t, uint32_t, int, int, short);
 
   bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
 
@@ -70,9 +70,12 @@ protected:
   unsigned int fReadoutStatusRegister;
   unsigned int fVMEAlignmentRegister;
   unsigned int fBoardErrRegister;
+  unsigned int fInputDelayRegister;
+  unsigned int fInputDelayChRegister;
 
   std::vector<int> fBLTalloc;
   std::map<int, int> fBLTCounter;
+  std::vector<int> fDelayPerCh;
 
   bool MonitorRegister(uint32_t reg, uint32_t mask, int ntries, int sleep, uint32_t val=1);
   virtual std::tuple<uint32_t, long> GetClockInfo(std::u32string_view);
@@ -80,6 +83,7 @@ protected:
   int fBoardHandle;
   int fBID;
   unsigned int fBaseAddress;
+  int fDefaultDelay;
 
   // Stuff for clock reset tracking
   int fRolloverCounter;

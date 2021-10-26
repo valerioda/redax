@@ -6,14 +6,16 @@ V1724_MV::V1724_MV(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opt
 V1724(log, opts, bid, address) {
   // MV boards seem to have reg 0x1n80 for channel n threshold
   fChTrigRegister = 0x1080;
+  fInputDelayRegister = fInputDelayChRegister = 0xFFFFFFFF; // disabled
   fArtificialDeadtimeChannel = 791;
+  fDefaultDelay = 0;
 }
 
 V1724_MV::~V1724_MV(){}
 
 std::tuple<int64_t, int, uint16_t, std::u32string_view> 
 V1724_MV::UnpackChannelHeader(std::u32string_view sv, long rollovers,
-    uint32_t header_time, uint32_t event_time, int event_words, int n_channels) {
+    uint32_t header_time, uint32_t event_time, int event_words, int n_channels, short) {
   int words = (event_words-4)/n_channels;
   // returns {timestamp (ns), baseline, waveform}
   // More rollover logic here, because processing is multithreaded.

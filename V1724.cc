@@ -28,6 +28,8 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   fBoardFailStatRegister = 0x8178;
   fReadoutStatusRegister = 0xEF04;
   fBoardErrRegister = 0xEF00;
+  fInputDelayRegister = 0x8034;
+  fInputDelayChRegister = 0x1034;
   fError = false;
 
   fSampleWidth = 10;
@@ -41,7 +43,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   // there's a more elegant way to do this, but I'm not going to write it
   fClockPeriod = std::chrono::nanoseconds((1l<<31)*fClockCycle);
   fArtificialDeadtimeChannel = 790;
-
+  fDefaultDelay = 0xA * 2 * fSampleWdith; // see register document
 }
 
 V1724::~V1724(){
@@ -74,6 +76,7 @@ int V1724::Init(int link, int crate, std::shared_ptr<Options>& opts) {
   } else {
     fLog->Entry(MongoLog::Local, "Board %i reset", fBID);
   }
+  fDelayPerCh.assign(fNChannels, fDefaultDelay);
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   if (opts->GetInt("do_sn_check", 0) != 0) {
     if ((word = ReadRegister(fSNRegisterLSB)) == 0xFFFFFFFF) {
@@ -186,6 +189,10 @@ int V1724::WriteRegister(unsigned int reg, unsigned int value){
   uint32_t write=0;
   write+=value;
   int ret = 0;
+  if (reg == fInputDelayRegister)
+    fDelayPerCh.assign(fNChannels, 2*fSampleWdith*value);
+  else if ((reg & fInputDelayChRegister) == fInputDelayChRegister)
+    fDelayPerCh[(reg>>16)&0xF] = 2*fSampleWidth*value;
   if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg,
 			&write,cvA32_U_DATA,cvD32)) != cvSuccess){
     fLog->Entry(MongoLog::Warning,
@@ -341,7 +348,7 @@ std::tuple<int, int, bool, uint32_t> V1724::UnpackEventHeader(std::u32string_vie
   return {sv[0]&0xFFFFFFF, sv[1]&0xFF, sv[1]&0x4000000, sv[3]&0x7FFFFFFF};
 }
 
-std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHeader(std::u32string_view sv, long rollovers, uint32_t header_time, uint32_t, int, int) {
+std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHeader(std::u32string_view sv, long rollovers, uint32_t header_time, uint32_t, int, int, short ch) {
   // returns {timestamp (ns), words this channel, baseline, waveform}
   long ch_time = sv[1]&0x7FFFFFFF;
   int words = sv[0]&0x7FFFFF;
@@ -351,6 +358,6 @@ std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHead
   // will never be a large difference in timestamps in one data packet
   if (ch_time > 15e8 && header_time < 5e8 && rollovers != 0) rollovers--;
   else if (ch_time < 5e8 && header_time > 15e8) rollovers++;
-  return {((rollovers<<31)+ch_time)*fClockCycle, words, 0, sv.substr(2, words-2)};
+  return {((rollovers<<31)+ch_time)*fClockCycle - fInputDelay[ch], words, 0, sv.substr(2, words-2)};
 }
 
