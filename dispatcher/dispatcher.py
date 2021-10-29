@@ -1,4 +1,4 @@
-#!/daq_common/miniconda3/bin/python3
+#!/daq_common2/miniconda3/bin/python3
 import configparser
 import argparse
 import os
