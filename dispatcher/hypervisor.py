@@ -426,7 +426,7 @@ class Hypervisor(object):
             logical_detectors = physical_status.keys()
         elif self.mongo_connect.is_linked(ok[0], ok[1]):
             # the detector we are linked with is fine, the other one crashed
-            logical_detectors = ok + not_ok
+            logical_detectors = [ok, not_ok]
         else:
             # the detector we linked with crashed, and the other one is fine
             logical_detectors = physical_status.keys()
