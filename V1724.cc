@@ -43,7 +43,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   // there's a more elegant way to do this, but I'm not going to write it
   fClockPeriod = std::chrono::nanoseconds((1l<<31)*fClockCycle);
   fArtificialDeadtimeChannel = 790;
-  fDefaultDelay = 0xA * 2 * fSampleWdith; // see register document
+  fDefaultDelay = 0xA * 2 * fSampleWidth; // see register document
 }
 
 V1724::~V1724(){
@@ -190,7 +190,7 @@ int V1724::WriteRegister(unsigned int reg, unsigned int value){
   write+=value;
   int ret = 0;
   if (reg == fInputDelayRegister)
-    fDelayPerCh.assign(fNChannels, 2*fSampleWdith*value);
+    fDelayPerCh.assign(fNChannels, 2*fSampleWidth*value);
   else if ((reg & fInputDelayChRegister) == fInputDelayChRegister)
     fDelayPerCh[(reg>>16)&0xF] = 2*fSampleWidth*value;
   if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg,
@@ -358,6 +358,6 @@ std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHead
   // will never be a large difference in timestamps in one data packet
   if (ch_time > 15e8 && header_time < 5e8 && rollovers != 0) rollovers--;
   else if (ch_time < 5e8 && header_time > 15e8) rollovers++;
-  return {((rollovers<<31)+ch_time)*fClockCycle - fInputDelay[ch], words, 0, sv.substr(2, words-2)};
+  return {((rollovers<<31)+ch_time)*fClockCycle - fDelayPerCh[ch], words, 0, sv.substr(2, words-2)};
 }
 
