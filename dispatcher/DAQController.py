@@ -333,6 +333,9 @@ class DAQController():
                 if self.control_detector(detector=detector, command='stop') == 0:
                     # only increment the counter if we actually issued a STOP
                     self.missed_arm_cycles[detector] += 1
+                    self.logger.info(f'{detector} missed {self.missed_arm_cycles[detector]} arm cycles')
+                else:
+                    self.logger.debug(f'{detector} didn\'t actually get a command, no arm cycler increment')
 
         return
 
