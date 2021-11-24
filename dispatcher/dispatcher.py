@@ -53,17 +53,17 @@ def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, 
     sh = daqnt.SignalHandler()
 
     # Declare necessary classes
-    Hypervisor = Hypervisor(control_mc[config['ControlDatabaseName']], logger,
+    hypervisor = Hypervisor(control_mc[config['ControlDatabaseName']], logger,
                                   daq_config, vme_config,
-                                  control_inputs=config['ControlKeys'].split(), sh=sh,
+                                  control_inputs=config['ControlKeys'].split(),
                                   testing=args.test, slackbot=SlackBot)
     MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor,
                                   args.test)
-    DAQControl = DAQController(config, daq_config, MongoConnector, logger, Hypervisor)
+    DAQControl = DAQController(config, daq_config, MongoConnector, logger, hypervisor)
 
     # connect the triangle
-    Hypervisor.mongo_connect = MongoConnector
-    Hypervisor.daq_controller = DAQControl
+    hypervisor.mongo_connect = MongoConnector
+    hypervisor.daq_controller = DAQControl
 
     sleep_period = int(config['PollFrequency'])
 
