@@ -4,10 +4,12 @@ import argparse
 import os
 import daqnt
 import json
+import subprocess
 import time
 
 from MongoConnect import MongoConnect
 from DAQController import DAQController
+from hypervisor import Hypervisor
 
 
 def setup():
@@ -28,10 +30,7 @@ def setup():
     logger = daqnt.get_daq_logger(config['LogName'], level=args.log, mc=control_mc)
     vme_config = json.loads(config['VMEConfig'])
 
-    # Declare necessary classes
-
     SlackBot = daqnt.DaqntBot(os.environ['SLACK_KEY'])
-    logger.info('Dispatcher starting up')
     while True:
         try:
             main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, args)
@@ -41,6 +40,7 @@ def setup():
             logger.debug(fatal_error, exc_info=True)
             logger.error(f'Fatal warning:\tran into {fatal_error}. Try '
                          f'logging error and restart the dispatcher')
+            logger.critical(f'Fatal dispatcher exception: {fatal_error}')
             SlackBot.send_message(
                 f'Dispatcher just died ({fatal_error}), this is very bad. '
                 'We\'re going to try a reboot but please alert the DAQ-group.',
@@ -51,18 +51,29 @@ def setup():
 
 def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, args):
     sh = daqnt.SignalHandler()
-    Hypervisor = daqnt.Hypervisor(control_mc[config['ControlDatabaseName']], logger,
+
+    # Declare necessary classes
+    Hypervisor = Hypervisor(control_mc[config['ControlDatabaseName']], logger,
                                   daq_config, vme_config,
                                   control_inputs=config['ControlKeys'].split(), sh=sh,
                                   testing=args.test, slackbot=SlackBot)
     MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor,
                                   args.test)
     DAQControl = DAQController(config, daq_config, MongoConnector, logger, Hypervisor)
+
     # connect the triangle
     Hypervisor.mongo_connect = MongoConnector
     Hypervisor.daq_controller = DAQControl
 
     sleep_period = int(config['PollFrequency'])
+
+    try:
+        commit = subprocess.run('git log -n 1 --pretty=oneline'.split(), capture_output=True).stdout.decode().split(' ')[0]
+    except Exception as e:
+        logger.debug(f'Couldn\'t get commit hash: {type(e)}, {e}')
+        commit = 'unknown'
+    logger.info(f'Dispatcher starting on commit: {commit}')
+
     while sh.event.is_set() == False:
         sh.event.wait(sleep_period)
         # Get most recent goal state from database. Users will update this from the website.
