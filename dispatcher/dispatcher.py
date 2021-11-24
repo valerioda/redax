@@ -106,4 +106,4 @@ def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, 
 
 
 if __name__ == '__main__':
-    main()
+    setup()
