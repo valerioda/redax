@@ -414,6 +414,8 @@ class Hypervisor(object):
 
         if len(ok) == len(physical_status):
             self.logger.error('Uh, how did you get here???')
+            self.slackbot.send_message('This happened again, you should really'
+                    ' get someone to fix this', tags='ALL')
             raise ValueError('Why did this happen?')
 
         if self.slackbot is not None:

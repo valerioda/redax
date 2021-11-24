@@ -1,17 +1,18 @@
-#!/daq_common/miniconda3/bin/python3
+#!/daq_common2/miniconda3/bin/python3
 import configparser
 import argparse
 import os
 import daqnt
 import json
 import subprocess
+import time
 
 from MongoConnect import MongoConnect
 from DAQController import DAQController
 from hypervisor import Hypervisor
 
-def main():
 
+def setup():
     # Parse command line
     parser = argparse.ArgumentParser(description='Manage the DAQ')
     parser.add_argument('--config', type=str, help='Path to your configuration file',
@@ -29,14 +30,37 @@ def main():
     logger = daqnt.get_daq_logger(config['LogName'], level=args.log, mc=control_mc)
     vme_config = json.loads(config['VMEConfig'])
 
-    # Declare necessary classes
-    sh = daqnt.SignalHandler()
     SlackBot = daqnt.DaqntBot(os.environ['SLACK_KEY'])
+    while True:
+        try:
+            main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, args)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as fatal_error:
+            logger.debug(fatal_error, exc_info=True)
+            logger.error(f'Fatal warning:\tran into {fatal_error}. Try '
+                         f'logging error and restart the dispatcher')
+            logger.critical(f'Fatal dispatcher exception: {fatal_error}')
+            SlackBot.send_message(
+                f'Dispatcher just died ({fatal_error}), this is very bad. '
+                'We\'re going to try a reboot but please alert the DAQ-group.',
+                add_tags='ALL')
+            time.sleep(60)
+            logger.warning('Restarting main loop')
+
+
+def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, args):
+    sh = daqnt.SignalHandler()
+
+    # Declare necessary classes
     Hypervisor = Hypervisor(control_mc[config['ControlDatabaseName']], logger,
-            daq_config, vme_config, control_inputs=config['ControlKeys'].split(),
-            testing=args.test, slackbot=SlackBot)
-    MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor, args.test)
+                                  daq_config, vme_config,
+                                  control_inputs=config['ControlKeys'].split(), sh=sh,
+                                  testing=args.test, slackbot=SlackBot)
+    MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor,
+                                  args.test)
     DAQControl = DAQController(config, daq_config, MongoConnector, logger, Hypervisor)
+
     # connect the triangle
     Hypervisor.mongo_connect = MongoConnector
     Hypervisor.daq_controller = DAQControl

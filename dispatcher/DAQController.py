@@ -192,7 +192,8 @@ class DAQController():
 
     def control_detector(self, command, detector, force=False):
         """
-        Issues the command to the detector if allowed by the timeout
+        Issues the command to the detector if allowed by the timeout.
+        Returns 0 if a command was issued and 1 otherwise
         """
         time_now = now()
         try:
@@ -215,7 +216,7 @@ class DAQController():
                 if self.one_detector_arming:
                     self.logger.info('Another detector already arming, can\'t arm %s' % detector)
                     # this leads to run number overlaps
-                    return
+                    return 1
                 readers, cc = self.mongo.get_hosts_for_mode(gs[detector]['mode'])
                 hosts = (cc, readers)
                 delay = 0
@@ -242,19 +243,21 @@ class DAQController():
             if self.mongo.send_command(command, hosts, gs[detector]['user'],
                     detector, gs[detector]['mode'], delay, force):
                 # failed
-                return
+                return 1
             self.last_command[command][detector] = time_now
             if command == 'start' and self.mongo.insert_run_doc(detector):
                 # db having a moment
-                return
+                return 0
             if (command == 'stop' and ls[detector]['number'] != -1 and
                     self.mongo.set_stop_time(ls[detector]['number'], detector, force)):
                 # db having a moment
-                return
+                return 0
 
         else:
             self.logger.debug('Can\'t send %s to %s, timeout at %i/%i' % (
                 command, detector, dt, self.timeouts[command]))
+            return 1
+        return 0
 
     def check_timeouts(self, detector, command=None):
         """ 
@@ -327,8 +330,12 @@ class DAQController():
                         'ERROR',
                         '%s_TIMEOUT' % command.upper())
                 #Keep track of how often the arming sequence times out
-                self.missed_arm_cycles[detector] += 1
-                self.control_detector(detector=detector, command='stop')
+                if self.control_detector(detector=detector, command='stop') == 0:
+                    # only increment the counter if we actually issued a STOP
+                    self.missed_arm_cycles[detector] += 1
+                    self.logger.info(f'{detector} missed {self.missed_arm_cycles[detector]} arm cycles')
+                else:
+                    self.logger.debug(f'{detector} didn\'t actually get a command, no arm cycler increment')
 
         return
 
