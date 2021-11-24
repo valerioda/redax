@@ -623,6 +623,7 @@ class MongoConnect(object):
         q = {f'acknowledged.{host}': 0}
         sort = [('_id', 1)]
         if (doc := self.collections['outgoing_commands'].find_one(q, sort=sort)) is None:
+            self.logger.debug(f'No unack\'d commands for {host}')
             return None
         return doc['createdAt'].replace(tzinfo=pytz.utc).timestamp()
 
