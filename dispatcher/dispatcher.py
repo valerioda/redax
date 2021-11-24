@@ -4,12 +4,13 @@ import argparse
 import os
 import daqnt
 import json
+import time
 
 from MongoConnect import MongoConnect
 from DAQController import DAQController
 
-def main():
 
+def setup():
     # Parse command line
     parser = argparse.ArgumentParser(description='Manage the DAQ')
     parser.add_argument('--config', type=str, help='Path to your configuration file',
@@ -28,21 +29,40 @@ def main():
     vme_config = json.loads(config['VMEConfig'])
 
     # Declare necessary classes
-    sh = daqnt.SignalHandler()
+
     SlackBot = daqnt.DaqntBot(os.environ['SLACK_KEY'])
+    logger.info('Dispatcher starting up')
+    while True:
+        try:
+            main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, args)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as fatal_error:
+            logger.debug(fatal_error, exc_info=True)
+            logger.error(f'Fatal warning:\tran into {fatal_error}. Try '
+                         f'logging error and restart the dispatcher')
+            SlackBot.send_message(
+                f'Dispatcher just died ({fatal_error}), this is very bad. '
+                'We\'re going to try a reboot but please alert the DAQ-group.',
+                add_tags='ALL')
+            time.sleep(60)
+            logger.warning('Restarting main loop')
+
+
+def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, args):
+    sh = daqnt.SignalHandler()
     Hypervisor = daqnt.Hypervisor(control_mc[config['ControlDatabaseName']], logger,
-            daq_config, vme_config, control_inputs=config['ControlKeys'].split(), sh=sh,
-            testing=args.test, slackbot=SlackBot)
-    MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor, args.test)
+                                  daq_config, vme_config,
+                                  control_inputs=config['ControlKeys'].split(), sh=sh,
+                                  testing=args.test, slackbot=SlackBot)
+    MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor,
+                                  args.test)
     DAQControl = DAQController(config, daq_config, MongoConnector, logger, Hypervisor)
     # connect the triangle
     Hypervisor.mongo_connect = MongoConnector
     Hypervisor.daq_controller = DAQControl
 
     sleep_period = int(config['PollFrequency'])
-
-    logger.info('Dispatcher starting up')
-
     while sh.event.is_set() == False:
         sh.event.wait(sleep_period)
         # Get most recent goal state from database. Users will update this from the website.
