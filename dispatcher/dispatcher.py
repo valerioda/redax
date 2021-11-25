@@ -53,22 +53,28 @@ def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, 
     sh = daqnt.SignalHandler()
 
     # Declare necessary classes
-    hypervisor = Hypervisor(control_mc[config['ControlDatabaseName']], logger,
-                                  daq_config, vme_config,
-                                  control_inputs=config['ControlKeys'].split(),
-                                  testing=args.test, slackbot=SlackBot)
-    MongoConnector = MongoConnect(config, daq_config, logger, control_mc, runs_mc, Hypervisor,
-                                  args.test)
-    DAQControl = DAQController(config, daq_config, MongoConnector, logger, hypervisor)
+    hv = Hypervisor(
+        control_mc[config['ControlDatabaseName']],
+        logger,
+        daq_config,
+        vme_config,
+        control_inputs=config['ControlKeys'].split(),
+        testing=args.test,
+        slackbot=SlackBot,
+    )
+    mc = MongoConnect(config, daq_config, logger, control_mc, runs_mc, hv, args.test)
+    dc = DAQController(config, daq_config, mc, logger, hv)
 
     # connect the triangle
-    hypervisor.mongo_connect = MongoConnector
-    hypervisor.daq_controller = DAQControl
+    hv.mongo_connect = mc
+    hv.daq_controller = dc
 
     sleep_period = int(config['PollFrequency'])
 
     try:
-        commit = subprocess.run('git log -n 1 --pretty=oneline'.split(), capture_output=True).stdout.decode().split(' ')[0]
+        commit = subprocess.run('git log -n 1 --pretty=oneline'.split(),
+                                capture_output=True
+                                ).stdout.decode().split(' ')[0]
     except Exception as e:
         logger.debug(f'Couldn\'t get commit hash: {type(e)}, {e}')
         commit = 'unknown'
@@ -77,31 +83,31 @@ def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, 
     while sh.event.is_set() == False:
         sh.event.wait(sleep_period)
         # Get most recent goal state from database. Users will update this from the website.
-        if (goal_state := MongoConnector.get_wanted_state()) is None:
+        if (goal_state := mc.get_wanted_state()) is None:
             continue
         # Get the Super-Detector configuration
-        current_config = MongoConnector.get_super_detector()
+        current_config = mc.get_super_detector()
         # Get most recent check-in from all connected hosts
-        if (latest_status := MongoConnector.get_update(current_config)) is None:
+        if (latest_status := mc.get_update(current_config)) is None:
             continue
 
         # Print an update
         for detector in latest_status.keys():
             state = 'ACTIVE' if goal_state[detector]['active'] == 'true' else 'INACTIVE'
             msg = (f'The {detector} should be {state} and is '
-                    f'{latest_status[detector]["status"].name}')
+                   f'{latest_status[detector]["status"].name}')
             if latest_status[detector]['number'] != -1:
                 msg += f' ({latest_status[detector]["number"]})'
             logger.debug(msg)
-        msg = (f"Linking: tpc-mv: {MongoConnector.is_linked('tpc', 'muon_veto')}, "
-               f"tpc-nv: {MongoConnector.is_linked('tpc', 'neutron_veto')}, "
-               f"mv-nv: {MongoConnector.is_linked('muon_veto', 'neutron_veto')}")
+        msg = (f"Linking: tpc-mv: {mc.is_linked('tpc', 'muon_veto')}, "
+               f"tpc-nv: {mc.is_linked('tpc', 'neutron_veto')}, "
+               f"mv-nv: {mc.is_linked('muon_veto', 'neutron_veto')}")
         logger.debug(msg)
 
         # Decision time. Are we actually in our goal state? If not what should we do?
-        DAQControl.solve_problem(latest_status, goal_state)
+        dc.solve_problem(latest_status, goal_state)
 
-    MongoConnector.quit()
+    mc.quit()
     return
 
 
