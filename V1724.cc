@@ -30,7 +30,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   fBoardErrRegister = 0xEF00;
   fInputDelayRegister = 0x8034;
   fInputDelayChRegister = 0x1034;
-  fPreTrigRegsiter = 0x8038;
+  fPreTrigRegister = 0x8038;
   fPreTrigChRegister = 0x1038;
   fError = false;
 
@@ -46,7 +46,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   fClockPeriod = std::chrono::nanoseconds((1l<<31)*fClockCycle);
   fArtificialDeadtimeChannel = 790;
   fDefaultDelay = 0xA * 2 * fSampleWidth; // see register document
-  fDefaultPreTrig = 6 * 2 * fSampleWidth // see register document
+  fDefaultPreTrig = 6 * 2 * fSampleWidth; // see register document
 }
 
 V1724::~V1724(){
