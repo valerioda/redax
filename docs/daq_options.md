@@ -213,7 +213,7 @@ Various options that tell redax how to run.
 | baseline_fallback_mode | cached/fixed/fail. Sometimes the baseline fitting routine doesn't converge. This option determines what happens in this case (only the non-converging channels are affected). Default is 'fail'. |
 | baseline_reference_run | Int. If either 'baseline_dac_mode' or 'baseline_fallback_mode' are set to 'cached' it will use the values from the run number defined here. |
 | baseline_value | Int. If 'baseline_dac_mode' is set to 'fit' it will attempt to adjust the baselines until they hit the decimal value defined here, which must lie between 0 and 16385 for a 14-bit ADC. Default 16000. |
-| baseline_fixed_value | Int. Use this to set the DAC offset register directly with this value. See CAEN documentation for more details. Default 4000. |
+| baseline_fixed_value | Int. Use this to set the DAC offset register directly with this value. See CAEN documentation for more details. Default 7000. |
 | processing_threads | Dict. The number of threads working on converting data between CAEN and strax format. Should be larger for processes responsible for more boards and can be smaller for processes only reading a few boards. For example, 24 threads will very easily handle a data flow of 200 MB/s (uncompressed) through that instance, but if you aren't expecting that much data then smaller values are fine. The default value is 8, but not specifying this could cause issues with processing. |
 | detectors | Dict. Which detector a given instance is attached to. Used mainly in aggregating registers. Required |
 
@@ -292,15 +292,19 @@ Redax accepts a variety of options that control various low-level operations. Th
 | baseline_max_steps | Int. The maximum number of steps during baselining. Steps involve measuring the baseline and trying to adjust it towards the target value. Default 30. |
 | baseline_adjustment_threshold | Int. How close the measured baseline must be to the target baseline in ADC units. If the absolute difference is less than this value, a channel is considered to have converged. Default 10. |
 | baselie_convergence_threshold | Int. How many consecutive times a channel must be within the adjustment threshold to be considered stable and finished. Default 3. |
-| baseline_min_adjustment | Int. The minimum change to the DAC value, given in DAC units. Note that the DAC is 16-bit while the digitizer is only 14-bit, so a conversion of approximately 0.25 does apply. Default 10. |
+| baseline_min_adjustment | Int. The minimum change to the DAC value, given in DAC units. Default 12 (approx 3 ADC units). |
 | baseline_rebin_log2 | Int. How much to rebin samples by when calculating the baseline. This is intended to provide some level of noise immunity. Samples are bit-shifted right by this value (ie, sample >> value). Default 1. |
 | baseline_bins_around_max | Int. How close around the mode the majority of samples must be. This is given in units of rebinned samples, so if this value is 3 and the rebin value is 1, then the region around the max is 6 ADC samples (3 << 1) in each direction. Default 3 |
 | baseline_fraction_around_max | Float. What fraction of total samples in the pulse must be around the mode for the pulse to be accepted. Default 0.8. |
 | baseline_triggers_per_step | Int. How many software triggers to send for each baseline step. Default 3. |
 | baseline_ms_between_triggers | Int. How long between software triggers. Default 10. |
-| blt_alloc | Array of integers. An array of (probably increasing) values of how much memory to allocate when reading out a specific board, in log2. Allocating memory is expensive, and it's a waste of time to always allocate a large buffer when the digitizer usually only has one photon, but if a board is full you have to make a lot of single photon-sized allocs to read it all out. Tuning this value depends on what the data looks like and how fast your server allocates memory. [16 19 20 23] is optimal for the XENONnT readout servers, and this saves minutes of CPU time per hour. Default [19]. |
+| baseline_max_dac | Int. The maximum value you want a digitizer to write to a DAC channel. Default 65535 |
+| baseline_min_dac | Int. The minimum value you want a digitizer to write to a DAC channel. Default 0 |
+| baseline_adc_to_dac | Float. The scale factor that says how large an adjustment of the DAC to make, given a measured difference of X ADC units. Default -3. |
+| baseline_dac_start | Int. The starting DAC value for the baseline fitting sequence. Closer to the final value is better, but too close might cause some issues. Default 10000. |
+| blt_alloc | Array of integers. An array of (probably increasing) values of how much memory to allocate when reading out a specific board, in log2. Allocating memory is expensive, and it's a waste of time to always allocate a large buffer when the digitizer usually only has one photon, but if a board is full you have to make a lot of single photon-sized allocs to read it all out. Tuning this value depends on what the data looks like and how fast your server allocates memory. [16 19 20 23] is optimal for the XENONnT readout servers, and this saves minutes of CPU time per hour. Default [23]. |
 | blt_safety_factor | Float. Sometimes the digitizer returns more bytes during a BLT readout than you ask for (it depends on the number and size of events in the digitizer's memory). This value is how much less to ask for than you allocate you don't overrun the readout buffer. Default 1.5. |
 | do_sn_check | 0/1. Whether or not to have each board check its serial number during initialization. Default 0. |
 | us_between_reads | Int. How many microseconds to sleep between polling digitizers for data. This has a major performance impact that will matter when under extremely high loads (ie, the bleeding edge of what your server(s) and boards are capable of), but otherwise shouldn't matter much. Default 10. |
-| transfer_batch | Int. How many data packets to accumulate in one readout thread before passing off to a processing thread. Default 16. |
+| transfer_batch | Int. After how many readout loops do you send accumulated data packets out for processing? Default 8. |
 

@@ -19,26 +19,28 @@ class V1724{
   V1724(std::shared_ptr<MongoLog>&, std::shared_ptr<Options>&, int, unsigned=0);
   virtual ~V1724();
 
-  virtual int Init(int, int, std::shared_ptr<Options>&);
+  virtual int Init(int, int);
   virtual int Read(std::unique_ptr<data_packet>&);
-  virtual int WriteRegister(unsigned int reg, unsigned int value);
-  virtual unsigned int ReadRegister(unsigned int reg);
+  virtual int WriteRegister(unsigned int, uint32_t);
+  virtual unsigned int ReadRegister(unsigned int);
   virtual int End();
 
-  int bid() {return fBID;}
-  uint16_t SampleWidth() {return fSampleWidth;}
-  int GetClockWidth() {return fClockCycle;}
+  inline int bid() {return fBID;}
+  inline uint16_t SampleWidth() {return fSampleWidth;}
+  inline int GetClockWidth() {return fClockCycle;}
   int16_t GetADChannel() {return fArtificialDeadtimeChannel;}
 
   virtual int LoadDAC(std::vector<uint16_t>&);
-  void ClampDACValues(std::vector<uint16_t>&, std::map<std::string, std::vector<double>>&);
-  unsigned GetNumChannels() {return fNChannels;}
+  inline unsigned GetNumChannels() {return fNChannels;}
   int SetThresholds(std::vector<uint16_t> vals);
 
   virtual std::tuple<int, int, bool, uint32_t> UnpackEventHeader(std::u32string_view);
   virtual std::tuple<int64_t, int, uint16_t, std::u32string_view> UnpackChannelHeader(std::u32string_view, long, uint32_t, uint32_t, int, int);
 
-  bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
+  inline bool CheckFail(bool val=false) {bool ret = fError; fError = val; return ret;}
+  void SetFlags(int flags) {fRegisterFlags = flags;}
+  void ResetFlags() {fRegisterFlags = 1;}
+  int BaselineStep(std::vector<uint16_t>&, std::vector<int>&, std::vector<double>&, int);
 
   // Acquisition Control
 
@@ -47,9 +49,9 @@ class V1724{
   virtual int AcquisitionStop(bool=false);
   virtual int SWTrigger();
   virtual int Reset();
-  virtual bool EnsureReady(int ntries, int sleep);
-  virtual bool EnsureStarted(int ntries, int sleep);
-  virtual bool EnsureStopped(int ntries, int sleep);
+  virtual bool EnsureReady(int=1000, int=1000);
+  virtual bool EnsureStarted(int=1000, int=1000);
+  virtual bool EnsureStopped(int=1000, int=1000);
   virtual int CheckErrors();
   virtual uint32_t GetAcquisitionStatus();
 
@@ -80,6 +82,7 @@ protected:
   int fBoardHandle;
   int fBID;
   unsigned int fBaseAddress;
+  int fRegisterFlags;
 
   // Stuff for clock reset tracking
   int fRolloverCounter;
@@ -88,6 +91,7 @@ protected:
   std::chrono::nanoseconds fClockPeriod;
 
   std::shared_ptr<MongoLog> fLog;
+  std::shared_ptr<Options> fOptions;
   std::atomic_bool fError;
 
   float fBLTSafety;
@@ -95,6 +99,5 @@ protected:
   int16_t fArtificialDeadtimeChannel;
   std::chrono::nanoseconds fTotReadTime;
 };
-
 
 #endif
