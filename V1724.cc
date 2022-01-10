@@ -206,7 +206,7 @@ int V1724::WriteRegister(unsigned int reg, uint32_t value){
   else if ((reg & fPreTrigChRegister) == fPreTrigChRegister)
     fPreTrigPerCh[(reg>>16)&0xF] = 2*fSampleWidth*value;
   if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg,
-			&write,cvA32_U_DATA,cvD32)) != cvSuccess){
+			&value,cvA32_U_DATA,cvD32)) != cvSuccess){
     fLog->Entry(MongoLog::Warning,
 		"Board %i write returned %i (ret), reg 0x%04x, value 0x%08x",
 		fBID, ret, reg, value);
@@ -431,7 +431,7 @@ int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& cha
         if (!(channel_mask & (1 << ch))) continue;
         std::u32string_view wf;
         std::tie(std::ignore, words_in_channel, std::ignore, wf) = UnpackChannelHeader(sv,
-            0, 0, 0, words_in_event, channels_in_event);
+            0, 0, 0, words_in_event, channels_in_event, ch);
         for (auto w : wf) {
           for (auto val : {w&0x3fff, (w>>16)&0x3fff}) {
             if (val != 0 && val != 0x3fff)

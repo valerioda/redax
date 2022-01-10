@@ -71,8 +71,9 @@ StraxFormatter::StraxFormatter(std::shared_ptr<Options>& opts, std::shared_ptr<M
   fChunkOverlap = long(fOptions->GetDouble("strax_chunk_overlap", 0.5)*1e9); // default 0.5s
   fFragmentBytes = fOptions->GetInt("strax_fragment_payload_bytes", 110*2);
   fFullFragmentSize = fFragmentBytes + fStraxHeaderSize;
-  fCompressor = fOptions->GetString("compressor", "lz4");
-  if (compressors.find(fCompressor) == compressors.end()) {
+  try {
+    fCompressor = compressors.at(fOptions->GetString("compressor", "lz4"));
+  } catch (...) {
     fLog->Entry(MongoLog::Error, "Invalid compressor specified");
     throw std::runtime_error("Invalid compressor");
   }
@@ -365,7 +366,7 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
       *uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
     // (also only works on c++20 because std::move, but still)
     buffers[i]->clear();
-    wsize[i] = compressors->at(fCompressor)(uncompressed, compressed[i], uncompressed_size[i]);
+    wsize[i] = fCompressor(uncompressed, compressed[i], uncompressed_size[i]);
     fBytesPerChunk[int(std::log2(uncompressed_size[i]))]++;
     fOutputBufferSize -= uncompressed_size[i];
   }
@@ -373,7 +374,7 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
   fChunks.erase(chunk_i);
   fOverlaps.erase(chunk_i);
 
-  // copy from n_post to n+1_pre
+  // "copy" from n_post to n+1_pre
   // we used shared_ptr because we don't want any actual copying to happen
   compressed[2] = compressed[1];
   wsize[2] = wsize[1];
