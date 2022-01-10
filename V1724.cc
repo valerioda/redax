@@ -31,6 +31,10 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   fBoardFailStatRegister = 0x8178;
   fReadoutStatusRegister = 0xEF04;
   fBoardErrRegister = 0xEF00;
+  fInputDelayRegister = 0x8034;
+  fInputDelayChRegister = 0x1034;
+  fPreTrigRegister = 0x8038;
+  fPreTrigChRegister = 0x1038;
   fError = false;
 
   fSampleWidth = 10;
@@ -44,8 +48,9 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   // there's a more elegant way to do this, but I'm not going to write it
   fClockPeriod = std::chrono::nanoseconds((1l<<31)*fClockCycle);
   fArtificialDeadtimeChannel = 790;
+  fDefaultDelay = 0xA * 2 * fSampleWidth; // see register document
+  fDefaultPreTrig = 6 * 2 * fSampleWidth; // see register document
   fRegisterFlags = 1;
-
 }
 
 V1724::~V1724(){
@@ -78,6 +83,8 @@ int V1724::Init(int link, int crate) {
   } else {
     fLog->Entry(MongoLog::Local, "Board %i reset", fBID);
   }
+  fDelayPerCh.assign(fNChannels, fDefaultDelay);
+  fPreTrigPerCh.assign(fNChannels, fDefaultPreTrig);
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   if (fOptions->GetInt("do_sn_check", 0) != 0) {
     if ((word = ReadRegister(fSNRegisterLSB)) == 0xFFFFFFFF) {
@@ -190,8 +197,19 @@ int V1724::GetClockCounter(uint32_t timestamp){
 int V1724::WriteRegister(unsigned int reg, uint32_t value){
   bool echo = fRegisterFlags & 0x1;
   int ret = 0;
-  if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg, &value, cvA32_U_DATA, cvD32)) != cvSuccess){
-    fLog->Entry(MongoLog::Warning, "Board %i write returned %i (ret), reg 0x%04x, value 0x%x", fBID, ret, reg, value);
+  if (reg == fInputDelayRegister)
+    fDelayPerCh.assign(fNChannels, 2*fSampleWidth*value);
+  else if ((reg & fInputDelayChRegister) == fInputDelayChRegister)
+    fDelayPerCh[(reg>>16)&0xF] = 2*fSampleWidth*value;
+  else if (reg == fPreTrigRegister)
+    fPreTrigPerCh.assign(fNChannels, 2*fSampleWidth*value);
+  else if ((reg & fPreTrigChRegister) == fPreTrigChRegister)
+    fPreTrigPerCh[(reg>>16)&0xF] = 2*fSampleWidth*value;
+  if((ret = CAENVME_WriteCycle(fBoardHandle, fBaseAddress+reg,
+			&write,cvA32_U_DATA,cvD32)) != cvSuccess){
+    fLog->Entry(MongoLog::Warning,
+		"Board %i write returned %i (ret), reg 0x%04x, value 0x%08x",
+		fBID, ret, reg, value);
     return -1;
   }
   if (echo) fLog->Entry(MongoLog::Local, "Board %i wrote 0x%x to 0x%04x", fBID, value, reg);
@@ -323,7 +341,7 @@ std::tuple<int, int, bool, uint32_t> V1724::UnpackEventHeader(std::u32string_vie
   return {sv[0]&0xFFFFFFF, sv[1]&0xFF, sv[1]&0x4000000, sv[3]&0x7FFFFFFF};
 }
 
-std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHeader(std::u32string_view sv, long rollovers, uint32_t header_time, uint32_t, int, int) {
+std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHeader(std::u32string_view sv, long rollovers, uint32_t header_time, uint32_t, int, int, short ch) {
   // returns {timestamp (ns), words this channel, baseline, waveform}
   long ch_time = sv[1]&0x7FFFFFFF;
   int words = sv[0]&0x7FFFFF;
@@ -333,7 +351,7 @@ std::tuple<int64_t, int, uint16_t, std::u32string_view> V1724::UnpackChannelHead
   // will never be a large difference in timestamps in one data packet
   if (ch_time > 15e8 && header_time < 5e8 && rollovers != 0) rollovers--;
   else if (ch_time < 5e8 && header_time > 15e8) rollovers++;
-  return {((rollovers<<31)+ch_time)*fClockCycle, words, 0, sv.substr(2, words-2)};
+  return {((rollovers<<31)+ch_time)*fClockCycle - fDelayPerCh[ch] - fPreTrigPerCh[ch], words, 0, sv.substr(2, words-2)};
 }
 
 int V1724::BaselineStep(std::vector<uint16_t>& dac_values, std::vector<int>& channel_finished, std::vector<double>& bl_per_channel, int step) {

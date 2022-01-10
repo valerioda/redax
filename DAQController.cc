@@ -451,6 +451,7 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
       }
       board_done[bid] = std::all_of(channel_finished[bid].begin(), channel_finished[bid].end(), [=](int v){return v >= convergence;});
     }
+
     if (std::all_of(board_done.begin(), board_done.end(), [](auto& p){return p.second;})) return 0;
   } // end steps
   std::string backup_bl = fOptions->GetString("baseline_fallback_mode", "fail");

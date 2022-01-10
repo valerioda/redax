@@ -228,7 +228,7 @@ int StraxFormatter::ProcessChannel(std::u32string_view buff, int words_in_event,
   int n_channels = std::bitset<max_channels>(channel_mask).count();
   // returns {timestamp (ns), words this channel, baseline, waveform}
   auto [timestamp, channel_words, baseline_ch, wf] = dp->digi->UnpackChannelHeader(
-      buff, dp->clock_counter, dp->header_time, event_time, words_in_event, n_channels);
+      buff, dp->clock_counter, dp->header_time, event_time, words_in_event, n_channels, channel);
 
   uint32_t samples_in_pulse = wf.size()*sizeof(char32_t)/sizeof(uint16_t);
   uint16_t sw = dp->digi->SampleWidth();

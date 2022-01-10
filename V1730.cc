@@ -8,6 +8,8 @@ V1730::V1730(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& options, 
   fSampleWidth = 2;
   fClockCycle = 2;
   fArtificialDeadtimeChannel = 792;
+  fDefaultDelay = 2*fSampleWidth*0xA; // see register document
+  fDefaultPreTrig = 6*fSampleWidth; // undocumented value?
 }
 
 V1730::~V1730(){}
@@ -21,10 +23,10 @@ std::tuple<int, int, bool, uint32_t> V1730::UnpackEventHeader(std::u32string_vie
 }
 
 std::tuple<int64_t, int, uint16_t, std::u32string_view>
-V1730::UnpackChannelHeader(std::u32string_view sv, long, uint32_t, uint32_t, int, int) {
+V1730::UnpackChannelHeader(std::u32string_view sv, long, uint32_t, uint32_t, int, int, short ch) {
   // returns {timestamp (ns), words this channel, baseline, waveform}
   int words = sv[0]&0x7FFFFF;
-  return {(long(sv[1]) | (long(sv[2]&0xFFFF)<<32))*fClockCycle,
+  return {(long(sv[1]) | (long(sv[2]&0xFFFF)<<32))*fClockCycle - fDelayPerCh[ch] - fPreTrigPerCh[ch]*2, // factor of 2 is special here, see CAEN docs
           words,
           (sv[2]>>16)&0x3FFF,
           sv.substr(3, words-3)};
