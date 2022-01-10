@@ -72,10 +72,13 @@ protected:
   unsigned int fBoardErrRegister;
   unsigned int fInputDelayRegister;
   unsigned int fInputDelayChRegister;
+  unsigned int fPreTrigRegister;
+  unsigned int fPreTrigChRegister;
 
   std::vector<int> fBLTalloc;
   std::map<int, int> fBLTCounter;
   std::vector<int> fDelayPerCh;
+  std::vector<int> fPreTrigPerCh;
 
   bool MonitorRegister(uint32_t reg, uint32_t mask, int ntries, int sleep, uint32_t val=1);
   virtual std::tuple<uint32_t, long> GetClockInfo(std::u32string_view);
@@ -84,6 +87,7 @@ protected:
   int fBID;
   unsigned int fBaseAddress;
   int fDefaultDelay;
+  int fDefaultPreTrig;
 
   // Stuff for clock reset tracking
   int fRolloverCounter;
