@@ -16,6 +16,7 @@
 #include <memory>
 #include <string_view>
 #include <chrono>
+#include <functional>
 
 class Options;
 class MongoLog;
@@ -80,7 +81,7 @@ private:
   void CreateEmpty(int);
   int fEmptyVerified;
 
-  std::function<long(std::shared_ptr<std::string>&, std::shared_ptr<std::string>&, long&) fCompressor;
+  std::function<long(std::shared_ptr<std::string>&, std::shared_ptr<std::string>&, long&)> fCompressor;
   int64_t fChunkLength; // ns
   int64_t fChunkOverlap; // ns
   int fFragmentBytes;

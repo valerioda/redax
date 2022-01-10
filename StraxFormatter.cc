@@ -10,7 +10,6 @@
 #include <bitset>
 #include <ctime>
 #include <cmath>
-#include <functional>
 
 namespace fs=std::experimental::filesystem;
 using namespace std::chrono;
