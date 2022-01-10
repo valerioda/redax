@@ -1,6 +1,7 @@
 #include "Options.hh"
 #include "DAXHelpers.hh"
 #include "MongoLog.hh"
+#include <algorithm>
 
 #include <bsoncxx/array/view.hpp>
 #include <bsoncxx/types.hpp>
@@ -18,9 +19,10 @@ Options::Options(std::shared_ptr<MongoLog>& log, std::string options_name, std::
     throw std::runtime_error("Can't initialize options class");
   fDB = (*fClient)[dbname];
   fDAC_collection = fDB["dac_calibration"];
-  int ref = GetInt("baseline_reference_run", -1);
-  bool load_ref = GetString("baseline_dac_mode", "") == "cached" || GetString("baseline_fallback_mode", "") == "cached";
-  if (load_ref && (ref == -1)) {
+  int ref = -1;
+  bool load_ref = GetString("baseline_dac_mode") == "cached" || GetNestedString("baseline_dac_mode."+fDetector) == "cached" || GetString("baseline_fallback_mode") == "cached";
+  if (load_ref && ((ref = std::max(GetInt("baseline_reference_run"), GetNestedInt("baseline_reference_run."+fDetector))) == -1)) {
+    // -1 is default return
     fLog->Entry(MongoLog::Error, "Please specify a reference run to use cached baselines");
     throw std::runtime_error("Config invalid");
   }
@@ -31,6 +33,7 @@ Options::Options(std::shared_ptr<MongoLog>& log, std::string options_name, std::
       fLog->Entry(MongoLog::Warning, "Could not load baseline reference run %i", ref);
       throw std::runtime_error("Can't load cached baselines");
     }
+    fLog->Entry(MongoLog::Local, "Loaded cached baselines from run %i", ref);
   }
 }
 
@@ -151,6 +154,27 @@ std::string Options::GetString(std::string path, std::string default_value){
     fLog->Entry(MongoLog::Local, "Using default value for %s", path.c_str());
     return default_value;
   }
+}
+
+std::string Options::GetNestedString(std::string path, std::string default_value){
+  // Parse string
+  std::vector<std::string> fields;
+  std::stringstream ss(path);
+  while( ss.good() ){
+    std::string substr;
+    getline( ss, substr, '.' );
+    fields.push_back( substr );
+  }
+  try{
+    auto val = bson_options[fields[0]];
+    for(unsigned int i=1; i<fields.size(); i++)
+      val = val[fields[i]];
+    return val.get_utf8().value.to_string();
+  }catch(const std::exception &e){
+    fLog->Entry(MongoLog::Local, "Using default value for %s",path.c_str());
+    return default_value;
+  }
+  return 0;
 }
 
 std::vector<BoardType> Options::GetBoards(std::string type){

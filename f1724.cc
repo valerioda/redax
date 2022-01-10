@@ -66,8 +66,8 @@ f1724::~f1724() {
   End();
 }
 
-int f1724::Init(int, int, std::shared_ptr<Options>& opts) {
-  if (opts->GetFaxOptions(fFaxOptions)) {
+int f1724::Init(int, int) {
+  if (fOptions->GetFaxOptions(fFaxOptions)) {
     return -1;
   }
   fGen = std::mt19937_64(fRD());

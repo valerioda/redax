@@ -61,7 +61,7 @@ int DAQController::Arm(std::shared_ptr<Options>& options){
         digi = std::make_shared<f1724>(fLog, fOptions, d.board, 0);
       else
         digi = std::make_shared<V1724>(fLog, fOptions, d.board, d.vme_address);
-      if (digi->Init(d.link, d.crate, fOptions))
+      if (digi->Init(d.link, d.crate))
         throw std::runtime_error("Board init failed");
       fDigitizers[d.link].emplace_back(digi);
       num_boards++;
@@ -100,7 +100,7 @@ int DAQController::Arm(std::shared_ptr<Options>& options){
     return -1;
   } else
     fLog->Entry(MongoLog::Debug, "Digitizer programming successful");
-  if (fOptions->GetString("baseline_dac_mode") == "fit") fOptions->UpdateDAC(dac_values);
+  if (fOptions->GetString("baseline_dac_mode") == "fit" || fOptions->GetNestedString("baseline_dac_mode."+fOptions->Detector()) == "fit") fOptions->UpdateDAC(dac_values);
 
   for(auto& link : fDigitizers ) {
     for(auto& digi : link.second){
@@ -123,28 +123,20 @@ int DAQController::Start(){
   if(fOptions->GetInt("run_start", 0) == 0){
     for(auto& link : fDigitizers ){
       for(auto& digi : link.second){
-
-	// Ensure digitizer is ready to start
-	if(digi->EnsureReady(1000, 1000)!= true){
-	  fLog->Entry(MongoLog::Warning, "Digitizer not ready to start after sw command sent");
-	  return -1;
-	}
-
-	// Send start command
-	digi->SoftwareStart();
-
-	// Ensure digitizer is started
-	if(digi->EnsureStarted(1000, 1000)!=true){
-	  fLog->Entry(MongoLog::Warning,
-		      "Timed out waiting for acquisition to start after SW start sent");
-	  return -1;
-	}
+        if(digi->EnsureReady()!= true || digi->SoftwareStart() || digi->EnsureStarted() != true){
+          fLog->Entry(MongoLog::Warning, "Board %i not started?", digi->bid());
+          return -1;
+        } else
+          fLog->Entry(MongoLog::Local, "Board %i started", digi->bid());
       }
     }
   } else {
     for (auto& link : fDigitizers)
       for (auto& digi : link.second)
-        digi->SINStart();
+        if (digi->SINStart() || !digi->EnsureReady())
+          fLog->Entry(MongoLog::Warning, "Board %i not ready to start?", digi->bid());
+        else
+          fLog->Entry(MongoLog::Local, "Board %i is ARMED and DANGEROUS", digi->bid());
   }
   fStatus = DAXHelpers::Running;
   return 0;
@@ -156,6 +148,7 @@ int DAQController::Stop(){
   int counter = 0;
   bool one_still_running = false;
   do{
+    // wait around for up to 10x100ms for the threads to finish reading
     one_still_running = false;
     for (auto& p : fRunning) one_still_running |= p.second;
     if (one_still_running) std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -167,7 +160,7 @@ int DAQController::Stop(){
       digi->AcquisitionStop(true);
 
       // Ensure digitizer is stopped
-      if(digi->EnsureStopped(1000, 1000) != true){
+      if(digi->EnsureStopped() != true){
 	fLog->Entry(MongoLog::Warning,
 		    "Timed out waiting for %i to stop after SW stop sent", digi->bid());
           //return -1;
@@ -185,7 +178,6 @@ int DAQController::Stop(){
     link.second.clear();
   }
   fDigitizers.clear();
-  fStatus = DAXHelpers::Idle;
 
   fPLL = 0;
   fLog->SetRunId(-1);
@@ -321,7 +313,7 @@ void DAQController::StatusUpdate(mongocxx::collection* collection) {
   std::map<int, int> retmap;
   std::pair<long, long> buf{0,0};
   int rate = fDataRate;
-  fDataRate = 0;
+  fDataRate -= fDataRate; // atomic nonsense, increment and decrement ops are better than assignment
   {
     const std::lock_guard<std::mutex> lg(fMutex);
     for (auto& p : fFormatters) {
@@ -355,8 +347,10 @@ void DAQController::StatusUpdate(mongocxx::collection* collection) {
 
 void DAQController::InitLink(std::vector<std::shared_ptr<V1724>>& digis,
     std::map<int, std::vector<uint16_t>>& dac_values, int& ret) {
-  std::string baseline_mode = fOptions->GetString("baseline_dac_mode", "fixed");
-  int nominal_dac = fOptions->GetInt("baseline_fixed_value", 4000);
+  std::string baseline_mode = fOptions->GetString("baseline_dac_mode", "n/a");
+  if (baseline_mode == "n/a")
+    baseline_mode = fOptions->GetNestedString("baseline_dac_mode."+fOptions->Detector(), "fixed");
+  int nominal_dac = fOptions->GetInt("baseline_fixed_value", 7000);
   if (baseline_mode == "fit") {
     if ((ret = FitBaselines(digis, dac_values)) < 0) {
       fLog->Entry(MongoLog::Warning, "Errors during baseline fitting");
@@ -368,6 +362,7 @@ void DAQController::InitLink(std::vector<std::shared_ptr<V1724>>& digis,
 
   for(auto& digi : digis){
     fLog->Entry(MongoLog::Local, "Board %i beginning specific init", digi->bid());
+    digi->ResetFlags();
 
     // Multiple options here
     int bid = digi->bid(), success(0);
@@ -407,60 +402,35 @@ void DAQController::InitLink(std::vector<std::shared_ptr<V1724>>& digis,
 
 int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
     std::map<int, std::vector<u_int16_t>> &dac_values) {
-  using std::vector;
-  using namespace std::chrono_literals;
-  unsigned ch_this_digi(0), max_steps = fOptions->GetInt("baseline_max_steps", 20);
-  int adjustment_threshold = fOptions->GetInt("baseline_adjustment_threshold", 10);
-  int convergence_threshold = fOptions->GetInt("baseline_convergence_threshold", 3);
-  int min_adjustment = fOptions->GetInt("baseline_min_adjustment", 0xA);
-  int rebin_factor = fOptions->GetInt("baseline_rebin_log2", 1); // log base 2
-  int bins_around_max = fOptions->GetInt("baseline_bins_around_max", 3);
-  int target_baseline = fOptions->GetInt("baseline_value", 16000);
-  int bid(0);
-  int triggers_per_step = fOptions->GetInt("baseline_triggers_per_step", 3);
-  std::chrono::milliseconds ms_between_triggers(fOptions->GetInt("baseline_ms_between_triggers", 10));
-  vector<long> DAC_cal_points = {60000, 30000, 6000}; // arithmetic overflow
-  std::map<int, vector<int>> channel_finished;
-  std::map<int, std::unique_ptr<data_packet>> buffers;
-  std::map<int, int> words_read;
-  std::map<int, vector<vector<double>>> bl_per_channel;
-  std::map<int, vector<int>> diff;
-  std::map<int, std::map<std::string, vector<double>>> cal_values;
-  std::map<int, vector<unsigned>> current_step;
+  /* This function has caused a lot of problems in the past for a wide variety of reasons.
+   * What it's trying to do isn't complex: figure out iteratively what value to write to the DAC so the
+   * baselines show up where you want them to. Usually the boards cooperate, sometimes they don't.
+   * A large fraction of the code is dealing with when they don't.
+   */
+  int max_steps = fOptions->GetInt("baseline_max_steps", 30);
+  int convergence = fOptions->GetInt("baseline_convergence_threshold", 3);
+  uint16_t start_dac = fOptions->GetInt("baseline_start_dac", 10000);
+  std::map<int, std::vector<int>> channel_finished;
+  std::map<int, bool> board_done;
+  std::map<int, std::vector<double>> bl_per_channel;
+  int bid;
 
   for (auto digi : digis) { // alloc ALL the things!
     bid = digi->bid();
-    ch_this_digi = digi->GetNumChannels();
-    dac_values[bid] = vector<u_int16_t>(ch_this_digi, 0);
-    channel_finished[bid] = vector<int>(ch_this_digi, 0);
-    bl_per_channel[bid] = vector<vector<double>>(ch_this_digi, vector<double>(max_steps,0));
-    diff[bid] = vector<int>(ch_this_digi, 0);
-    current_step[bid] = vector<unsigned>(ch_this_digi, 0);
-    cal_values[bid] = std::map<std::string, vector<double>>(
-        {{"slope", vector<double>(ch_this_digi)},
-        {"yint", vector<double>(ch_this_digi)}});
+    dac_values[bid] = std::vector<uint16_t>(digi->GetNumChannels(), start_dac); // start higher than we need to
+    channel_finished[bid] = std::vector<int>(digi->GetNumChannels(), 0);
+    board_done[bid] = false;
+    bl_per_channel[bid] = std::vector<double>(digi->GetNumChannels(), 0);
+    digi->SetFlags(2);
   }
 
-  bool done(true), fail(false);
-  int counts_total(0), counts_around_max(0);
-  double B,C,D,E,F, slope, yint, baseline;
-  double fraction_around_max = fOptions->GetDouble("baseline_fraction_around_max", 0.8);
-  u_int32_t words_in_event, channel_mask, words;
-  u_int16_t val0, val1;
-  int channels_in_event;
-
-  for (unsigned step = 0; step < max_steps; step++) {
+  for (int step = 0; step < max_steps; step++) {
     fLog->Entry(MongoLog::Local, "Beginning baseline step %i/%i", step, max_steps);
-    done = true;
     // prep
-    for (auto d : digis) {
-      for (unsigned ch = 0; ch < d->GetNumChannels(); ch++) {
-        if (current_step[d->bid()][ch] < DAC_cal_points.size()) {
-          dac_values[d->bid()][ch] = DAC_cal_points[current_step[d->bid()][ch]];
-        }
-      }
-    }
-    for (auto d : digis) {
+    for (auto& d : digis) {
+      bid = d->bid();
+      if (board_done[bid])
+        continue;
       if (d->LoadDAC(dac_values[d->bid()])) {
         fLog->Entry(MongoLog::Warning, "Board %i failed to load DAC", d->bid());
         return -2;
@@ -468,181 +438,33 @@ int DAQController::FitBaselines(std::vector<std::shared_ptr<V1724>> &digis,
     }
     // "After writing, the user is recommended to wait for a few seconds before
     // a new RUN to let the DAC output get stabilized" - CAEN documentation
-    std::this_thread::sleep_for(1s);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     // sleep(2) seems unnecessary after preliminary testing
 
-    // start board
-    for (auto d : digis) {
-      if (d->EnsureReady(1000,1000))
-        d->SoftwareStart();
-      else
-        fail = true;
-    }
-    std::this_thread::sleep_for(1ms);
-    for (auto d : digis) {
-      if (!d->EnsureStarted(1000,1000)) {
-        d->AcquisitionStop();
-        fail = true;
+    for (auto& d : digis) {
+      int bid = d->bid();
+      if (board_done[bid])
+        continue;
+      if (d->BaselineStep(dac_values[bid], channel_finished[bid], bl_per_channel[bid], step) < 0) {
+        fLog->Entry(MongoLog::Error, "Error fitting baselines");
+        return -2;
       }
+      board_done[bid] = std::all_of(channel_finished[bid].begin(), channel_finished[bid].end(), [=](int v){return v >= convergence;});
     }
 
-    // send triggers
-    for (int trig = 0; trig < triggers_per_step; trig++) {
-      for (auto d : digis) d->SWTrigger();
-      std::this_thread::sleep_for(ms_between_triggers);
-    }
-    // stop
-    for (auto d : digis) {
-      d->AcquisitionStop();
-      if (!d->EnsureStopped(1000,1000)) {
-        fail = true;
-      }
-    }
-    if (fail) {
-      for (auto d : digis) d->AcquisitionStop();
-      fLog->Entry(MongoLog::Warning, "Error in baseline digi control");
-      return -2;
-    }
-    std::this_thread::sleep_for(1ms);
-
-    // readout
-    for (auto d : digis) {
-      words_read[d->bid()] = d->Read(buffers[d->bid()]);
-    }
-
-    // decode
-    if (std::any_of(words_read.begin(), words_read.end(),
-          [=](auto p) {return p.second < 0;})) {
-      for (auto d : digis) {
-        if (words_read[d->bid()] < 0)
-          fLog->Entry(MongoLog::Error, "Board %i has readout error in baselines",
-              d->bid());
-      }
-      return -2;
-    }
-    if (std::any_of(words_read.begin(), words_read.end(), [=](auto p) {
-          return (0 <= p.second) && (p.second <= 16);})) { // header-only readouts???
-      for (auto& p : words_read) if ((0 <= p.second) && (p.second <= 16))
-        fLog->Entry(MongoLog::Local, "Board %i undersized readout (%i)",
-            p.first, p.second);
-      continue;
-    }
-
-    // analyze
-    for (auto d : digis) {
-      bid = d->bid();
-      auto it = buffers[bid]->buff.begin();
-      while (it < buffers[bid]->buff.end()) {
-        if ((*it)>>28 == 0xA) {
-          words = (*it)&0xFFFFFFF;
-          std::u32string_view sv(buffers[bid]->buff.data() + std::distance(buffers[bid]->buff.begin(), it), words);
-          std::tie(words_in_event, channel_mask, std::ignore, std::ignore) = d->UnpackEventHeader(sv);
-          if (words == 4) {
-            it += 4;
-            continue;
-          }
-          if (channel_mask == 0) { // should be impossible?
-            it += 4;
-            continue;
-          }
-          channels_in_event = std::bitset<16>(channel_mask).count();
-          it += words;
-          sv.remove_prefix(4);
-          for (unsigned ch = 0; ch < d->GetNumChannels(); ch++) {
-            if (!(channel_mask & (1 << ch))) continue;
-            std::u32string_view wf;
-            std::tie(std::ignore, words, std::ignore, wf) = d->UnpackChannelHeader(sv,
-                0, 0, 0, words, channels_in_event, ch);
-            vector<int> hist(0x4000, 0);
-            for (auto w : wf) {
-              val0 = w&0x3FFF;
-              val1 = (w>>16)&0x3FFF;
-              if (val0*val1 == 0) continue;
-              hist[val0 >> rebin_factor]++;
-              hist[val1 >> rebin_factor]++;
-            }
-            sv.remove_prefix(words);
-            auto max_it = std::max_element(hist.begin(), hist.end());
-            auto max_start = std::max(max_it - bins_around_max, hist.begin());
-            auto max_end = std::min(max_it + bins_around_max+1, hist.end());
-            counts_total = std::accumulate(hist.begin(), hist.end(), 0);
-            counts_around_max = std::accumulate(max_start, max_end, 0);
-            if (counts_around_max < fraction_around_max*counts_total) {
-              fLog->Entry(MongoLog::Local,
-                  "Bd %i ch %i: %i out of %i counts around max %i",
-                  bid, ch, counts_around_max, counts_total,
-                  std::distance(hist.begin(), max_it)<<rebin_factor);
-              continue;
-            }
-            vector<int> bin_ids(std::distance(max_start, max_end), 0);
-            std::iota(bin_ids.begin(), bin_ids.end(), std::distance(hist.begin(), max_start));
-            // calculated weighted average
-            baseline = std::inner_product(max_start, max_end, bin_ids.begin(), 0) << rebin_factor;
-            baseline /= counts_around_max;
-            bl_per_channel[bid][ch][step] = baseline;
-            current_step[bid][ch]++;
-
-            if (current_step[bid][ch] < DAC_cal_points.size()) {
-              done &= false;
-              continue;
-            } else if (current_step[bid][ch] == DAC_cal_points.size()) {
-              // calibration constants
-              B = C = D = E = F = 0;
-              for (unsigned i = 0; i < DAC_cal_points.size(); i++) {
-                B += DAC_cal_points[i]*DAC_cal_points[i];
-                C += 1;
-                D += DAC_cal_points[i]*bl_per_channel[bid][ch][i];
-                E += bl_per_channel[bid][ch][i];
-                F += DAC_cal_points[i];
-              }
-              cal_values[bid]["slope"][ch] = slope = (C*D - E*F)/(B*C - F*F);
-              cal_values[bid]["yint"][ch] = yint = (B*E - D*F)/(B*C - F*F);
-              dac_values[bid][ch] = (target_baseline-yint)/slope;
-              done &= false;
-            } else {
-              // iterate
-              if (channel_finished[bid][ch] >= convergence_threshold) {
-                done &= true;
-                if (channel_finished[bid][ch]++ == convergence_threshold) {
-                  fLog->Entry(MongoLog::Local, "%i.%i converged after %i steps: %.1f", bid, ch,
-                      step, bl_per_channel[bid][ch][step]);
-                }
-                continue;
-              }
-
-              float off_by = target_baseline - bl_per_channel[bid][ch][step];
-              if (abs(off_by) < adjustment_threshold) {
-                channel_finished[bid][ch]++;
-                continue;
-              }
-              done &= false;
-              channel_finished[bid][ch] = std::max(0, channel_finished[bid][ch]-1);
-              int adjustment = off_by * cal_values[bid]["slope"][ch];
-              if (abs(adjustment) < min_adjustment)
-                adjustment = std::copysign(min_adjustment, adjustment);
-              dac_values[bid][ch] += adjustment;
-            }
-
-          } // for each channel
-
-        } else { // if header
-          it++;
-        }
-      } // end of while in buffer
-      d->ClampDACValues(dac_values[bid], cal_values[bid]);
-    } // process per digi
-
-    if (done) return 0;
+    if (std::all_of(board_done.begin(), board_done.end(), [](auto& p){return p.second;})) return 0;
   } // end steps
   std::string backup_bl = fOptions->GetString("baseline_fallback_mode", "fail");
   if (backup_bl == "fail") {
     fLog->Entry(MongoLog::Warning, "Baseline fallback mode is 'fail'");
     return -3;
   }
-  int fixed = fOptions->GetInt("baseline_fixed_value", 4000);
-  for (auto& p : channel_finished)
+  int fixed = fOptions->GetInt("baseline_fixed_value", 7000);
+  for (auto& p : channel_finished) // (bid, vector)
     for (unsigned i = 0; i < p.second.size(); i++)
-      if (p.second[i] < convergence_threshold) {
+      if (p.second[i] < convergence) {
+        fLog->Entry(MongoLog::Local, "%i.%i didn't converge, last value %.1f, last offset 0x%x",
+            p.first, i, bl_per_channel[p.first][i], dac_values[p.first][i]);
         if (backup_bl == "cached")
           dac_values[p.first][i] = fOptions->GetSingleDAC(p.first, i, fixed);
         else if (backup_bl == "fixed")

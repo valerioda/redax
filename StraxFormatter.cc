@@ -10,14 +10,53 @@
 #include <bitset>
 #include <ctime>
 #include <cmath>
+#include <functional>
 
 namespace fs=std::experimental::filesystem;
 using namespace std::chrono;
 const int event_header_words = 4, max_channels = 16;
 
-double timespec_subtract(struct timespec& a, struct timespec& b) {
-  return (a.tv_sec - b.tv_sec)*1e6 + (a.tv_nsec - b.tv_nsec)/1e3;
+long compress_blosc(std::shared_ptr<std::string>& in, std::shared_ptr<std::string>& out, long& size_in) {
+  long max_compressed_size = size_in + BLOSC_MAX_OVERHEAD;
+  out = std::make_shared<std::string>(max_compressed_size, 0);
+  return blosc_compress_ctx(5, 1, sizeof(char), size_in, in->data(), out->data(), max_compressed_size,"lz4", 0, 2);
 }
+
+long compress_lz4(std::shared_ptr<std::string>& in, std::shared_ptr<std::string>& out, long& size_in) {
+  // Note: the current package repo version for Ubuntu 18.04 (Oct 2019) is 1.7.1, which is
+  // so old it is not tracked on the lz4 github. The API for frame compression has changed
+  // just slightly in the meantime. So if you update and it breaks you'll have to tune at least
+  // the LZ4F_preferences_t object to the new format.
+  // Can tune here as needed, these are defaults from the LZ4 examples
+  LZ4F_preferences_t kPrefs = {
+    { LZ4F_max256KB, LZ4F_blockLinked, LZ4F_noContentChecksum, LZ4F_frame, 0, { 0, 0 } },
+      0,   /* compression level; 0 == default */
+      0,   /* autoflush */
+      { 0, 0, 0 },  /* reserved, must be set to 0 */
+  };
+  long max_compressed_size = LZ4F_compressFrameBound(size_in, &kPrefs);
+  out = std::make_shared<std::string>(max_compressed_size, 0);
+  return LZ4F_compressFrame(out->data(), max_compressed_size, in->data(), size_in, &kPrefs);
+}
+
+long compress_none(std::shared_ptr<std::string>& in, std::shared_ptr<std::string>& out, long& size_in) {
+  out = in;
+  return size_in;
+}
+
+long compress_devnull(std::shared_ptr<std::string>&, std::shared_ptr<std::string>&, long& size_in) {
+  // this function is why we pass long&, so we can trick the calling function into deleting the data
+  // without writing it out first, because the uncompressed size is the determining factor
+  size_in = 0;
+  return 0;
+}
+
+const std::map<std::string, std::function<long(std::shared_ptr<std::string>&, std::shared_ptr<std::string>&, long&)>> compressors = {
+  {"blosc", compress_blosc},
+  {"lz4", compress_lz4},
+  {"none", compress_none},
+  {"delete", compress_devnull}
+};
 
 StraxFormatter::StraxFormatter(std::shared_ptr<Options>& opts, std::shared_ptr<MongoLog>& log){
   fActive = true;
@@ -33,6 +72,10 @@ StraxFormatter::StraxFormatter(std::shared_ptr<Options>& opts, std::shared_ptr<M
   fFragmentBytes = fOptions->GetInt("strax_fragment_payload_bytes", 110*2);
   fFullFragmentSize = fFragmentBytes + fStraxHeaderSize;
   fCompressor = fOptions->GetString("compressor", "lz4");
+  if (compressors.find(fCompressor) == compressors.end()) {
+    fLog->Entry(MongoLog::Error, "Invalid compressor specified");
+    throw std::runtime_error("Invalid compressor");
+  }
   fFullChunkLength = fChunkLength+fChunkOverlap;
   fHostname = fOptions->Hostname();
   std::string run_name;
@@ -111,22 +154,17 @@ void StraxFormatter::GenerateArtificialDeadtime(int64_t timestamp, const std::sh
 
 void StraxFormatter::ProcessDatapacket(std::unique_ptr<data_packet> dp){
   // Take a buffer and break it up into one document per channel
-  struct timespec dp_start, dp_end, ev_start, ev_end;
   auto it = dp->buff.begin();
   int evs_this_dp(0), words(0);
   bool missed = false;
   std::map<int, int> dpc;
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &dp_start);
   do {
     if((*it)>>28 == 0xA){
       missed = true; // it works out
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ev_start);
       words = (*it)&0xFFFFFFF;
       std::u32string_view sv(dp->buff.data() + std::distance(dp->buff.begin(), it), words);
       // std::u32string_view sv(it, it+words); //c++20 :(
       ProcessEvent(sv, dp, dpc);
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ev_end);
-      fProcTimeEv += timespec_subtract(ev_end, ev_start);
       evs_this_dp++;
       it += words;
     } else {
@@ -144,8 +182,6 @@ void StraxFormatter::ProcessDatapacket(std::unique_ptr<data_packet> dp){
       it++;
     }
   } while (it < dp->buff.end() && fActive == true);
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &dp_end);
-  fProcTimeDP += timespec_subtract(dp_end, dp_start);
   fBytesProcessed += dp->buff.size()*sizeof(char32_t);
   fEvPerDP[evs_this_dp]++;
   {
@@ -158,8 +194,6 @@ void StraxFormatter::ProcessDatapacket(std::unique_ptr<data_packet> dp){
 int StraxFormatter::ProcessEvent(std::u32string_view buff,
     const std::unique_ptr<data_packet>& dp, std::map<int, int>& dpc) {
   // buff = start of event
-
-  struct timespec ch_start, ch_end;
 
   // returns {words this event, channel mask, board fail, header timestamp}
   auto [words, channel_mask, fail, event_time] = dp->digi->UnpackEventHeader(buff);
@@ -178,10 +212,7 @@ int StraxFormatter::ProcessEvent(std::u32string_view buff,
 
   for(unsigned ch=0; ch<n_chan; ch++){
     if (channel_mask & (1<<ch)) {
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ch_start);
       ret = ProcessChannel(buff, words, channel_mask, event_time, frags, ch, dp, dpc);
-      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ch_end);
-      fProcTimeCh += timespec_subtract(ch_end, ch_start);
       buff.remove_prefix(ret);
     }
   }
@@ -316,57 +347,35 @@ void StraxFormatter::Process() {
   if (fMutexWaitTime.size() > 0) std::sort(fMutexWaitTime.begin(), fMutexWaitTime.end());
 }
 
-// Can tune here as needed, these are defaults from the LZ4 examples
-static const LZ4F_preferences_t kPrefs = {
-  { LZ4F_max256KB, LZ4F_blockLinked, LZ4F_noContentChecksum, LZ4F_frame, 0, { 0, 0 } },
-    0,   /* compression level; 0 == default */
-    0,   /* autoflush */
-    { 0, 0, 0 },  /* reserved, must be set to 0 */
-};
-
 void StraxFormatter::WriteOutChunk(int chunk_i){
   // Write the contents of the buffers to compressed files
-  struct timespec comp_start, comp_end;
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &comp_start);
 
   std::list<std::string>* buffers[2] = {&fChunks[chunk_i], &fOverlaps[chunk_i]};
   long uncompressed_size[3] = {0L, 0L, 0L};
-  std::string uncompressed;
-  std::shared_ptr<std::string> out_buffer[3];
-  int wsize[3];
-  long max_compressed_size = 0;
+  std::shared_ptr<std::string> uncompressed;
+  std::shared_ptr<std::string> compressed[3];
+  long wsize[3];
 
   for (int i = 0; i < 2; i++) {
     if (buffers[i]->size() == 0) continue;
     uncompressed_size[i] = buffers[i]->size()*fFullFragmentSize;
-    uncompressed.reserve(uncompressed_size[i]);
+    uncompressed = std::make_shared<std::string>();
+    uncompressed->reserve(uncompressed_size[i]);
     for (auto it = buffers[i]->begin(); it != buffers[i]->end(); it++)
-      uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
+      *uncompressed += *it; // std::accumulate would be nice but 3x slower without -O2
     // (also only works on c++20 because std::move, but still)
     buffers[i]->clear();
-    if(fCompressor == "blosc"){
-      max_compressed_size = uncompressed_size[i] + BLOSC_MAX_OVERHEAD;
-      out_buffer[i] = std::make_shared<std::string>(max_compressed_size, 0);
-      wsize[i] = blosc_compress_ctx(5, 1, sizeof(char), uncompressed_size[i],
-          uncompressed.data(), out_buffer[i]->data(), max_compressed_size,"lz4", 0, 2);
-    }else{
-      // Note: the current package repo version for Ubuntu 18.04 (Oct 2019) is 1.7.1, which is
-      // so old it is not tracked on the lz4 github. The API for frame compression has changed
-      // just slightly in the meantime. So if you update and it breaks you'll have to tune at least
-      // the LZ4F_preferences_t object to the new format.
-      max_compressed_size = LZ4F_compressFrameBound(uncompressed_size[i], &kPrefs);
-      out_buffer[i] = std::make_shared<std::string>(max_compressed_size, 0);
-      wsize[i] = LZ4F_compressFrame(out_buffer[i]->data(), max_compressed_size,
-          uncompressed.data(), uncompressed_size[i], &kPrefs);
-    }
-    uncompressed.clear();
+    wsize[i] = compressors->at(fCompressor)(uncompressed, compressed[i], uncompressed_size[i]);
     fBytesPerChunk[int(std::log2(uncompressed_size[i]))]++;
     fOutputBufferSize -= uncompressed_size[i];
   }
+  uncompressed.reset();
   fChunks.erase(chunk_i);
   fOverlaps.erase(chunk_i);
 
-  out_buffer[2] = out_buffer[1];
+  // copy from n_post to n+1_pre
+  // we used shared_ptr because we don't want any actual copying to happen
+  compressed[2] = compressed[1];
   wsize[2] = wsize[1];
   uncompressed_size[2] = uncompressed_size[1];
   auto names = GetChunkNames(chunk_i);
@@ -378,9 +387,9 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
     if (!fs::exists(output_dir_temp))
       fs::create_directory(output_dir_temp);
     std::ofstream writefile(filename_temp, std::ios::binary);
-    writefile.write(out_buffer[i]->data(), wsize[i]);
+    writefile.write(compressed[i]->data(), wsize[i]);
     writefile.close();
-    out_buffer[i].reset();
+    compressed[i].reset();
 
     auto output_dir = GetDirectoryPath(names[i]);
     auto filename = GetFilePath(names[i]);
@@ -395,8 +404,6 @@ void StraxFormatter::WriteOutChunk(int chunk_i){
       fs::create_directory(output_dir);
     fs::rename(filename_temp, filename);
   } // End writing
-  clock_gettime(CLOCK_THREAD_CPUTIME_ID, &comp_end);
-  fCompTime += timespec_subtract(comp_end, comp_start);
   return;
 }
 
