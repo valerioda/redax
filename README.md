@@ -1,12 +1,12 @@
 # REDAX
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5882717.svg)](https://doi.org/10.5281/zenodo.5882717)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5882716.svg)](https://doi.org/10.5281/zenodo.5882716)
 
 D. Coderre, 2018, D. Masson, 2020. Please see license in LICENSE file.
 
 See documentation here: [link](https://axfoundation.github.io/redax)
 
 ## Citation
-Please cite the latest version from [zenodo](https://doi.org/10.5281/zenodo.5882717).
+Please cite the latest version from [zenodo](https://doi.org/10.5281/zenodo.5882716).
 
 ## Prerequisites
 
