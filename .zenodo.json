@@ -1,0 +1,32 @@
+{
+    "language": "eng", 
+    "title": "redax", 
+    "creators": [
+      {
+        "affiliation": "University of Freiburg", 
+        "name": "Masson, D."
+      }, 
+      {
+        "affiliation": "Nikhef", 
+        "name": "Angevaare, J.R."
+      }, 
+      {
+        "affiliation": "University of Freiburg", 
+        "name": "Elykov, A."
+      }, 
+      {
+        "affiliation": "Nikhef", 
+        "name": "Gaemers, P.W."
+      },
+      {
+        "affiliation": "Nikhef", 
+        "name": "Di Pede, S."
+      }, 
+      {
+        "affiliation": "University of Freiburg", 
+        "name": "Coderre, D."
+      }
+    ], 
+    "access_right": "open", 
+    "description": "Distributed, parallel high-throughput data acquisition software for XENONnT"
+}
