@@ -36,6 +36,7 @@ V1724::V1724(std::shared_ptr<MongoLog>& log, std::shared_ptr<Options>& opts, int
   fPreTrigRegister = 0x8038;
   fPreTrigChRegister = 0x1038;
   fError = false;
+  fBufferSize = 0x800000; // 8 MB total memory
 
   fSampleWidth = 10;
   fClockCycle = 10;
@@ -76,6 +77,7 @@ int V1724::Init(int link, int crate) {
 
   uint32_t word(0);
   int my_bid(0);
+  fROBuffer.assign(fBufferSize*2, 0); // double buffer for safety
 
   if (Reset()) {
     fLog->Entry(MongoLog::Error, "Board %i unable to pre-load registers", fBID);
@@ -233,65 +235,40 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
   auto t_start = high_resolution_clock::now();
   if ((GetAcquisitionStatus() & 0x8) == 0) return 0;
   // Initialize
-  int blt_words=0, nb=0, ret=-5;
-  std::vector<std::pair<char32_t*, int>> xfer_buffers;
-  xfer_buffers.reserve(4);
+  int total_bytes=0, nb=0, ret=-5;
 
-  unsigned count = 0;
-  int alloc_bytes, request_bytes;
-  char32_t* thisBLT = nullptr;
   do{
-    // each loop allocate more memory than the last one.
-    // there's a fine line to walk between making many small allocations for full digitizers
-    // and fewer, large allocations for empty digitizers. 16 19 20 23 seem to be optimal
-    // for the readers, but this depends heavily on specific machines.
-    if (count < fBLTalloc.size()) {
-      alloc_bytes = 1 << fBLTalloc[count];
-    } else {
-      alloc_bytes = 1 << (fBLTalloc.back() + count - fBLTalloc.size() + 1);
-    }
-    // Reserve space for this block transfer
-    thisBLT = new char32_t[alloc_bytes/sizeof(char32_t)];
-    request_bytes = alloc_bytes/fBLTSafety;
+    // we already allocated a readout buffer, we just read into it
 
-    ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress, thisBLT,
-				     request_bytes, cvA32_U_MBLT, cvD64, &nb);
+    ret = CAENVME_FIFOBLTReadCycle(fBoardHandle, fBaseAddress, fROBuffer.data()+total_bytes,
+				     fBufferSize, cvA32_U_MBLT, cvD64, &nb);
     if( (ret != cvSuccess) && (ret != cvBusError) ){
       fLog->Entry(MongoLog::Error,
-		  "Board %i read error after %i reads: (%i) and transferred %i bytes this read",
-		  fBID, count, ret, nb);
+		  "Board %i read error %i, transferred %i bytes this read",
+		  fBID, ret, nb);
 
       // Delete all reserved data and fail
-      delete[] thisBLT;
-      for (auto& b : xfer_buffers) delete[] b.first;
       return -1;
     }
-    if (nb > request_bytes) fLog->Entry(alloc_bytes > nb ? MongoLog::Debug : MongoLog::Warning,
-        "Board %i got %x more bytes than asked for (headroom %i)",
-        fBID, nb-request_bytes, alloc_bytes-nb);
-
-    count++;
-    blt_words+=nb/sizeof(char32_t);
-    xfer_buffers.emplace_back(std::make_pair(thisBLT, nb/sizeof(char32_t)));
+    total_bytes += nb;
+    if (total_bytes > fBufferSize) fLog->Entry(MongoLog::Debug,
+        "Board %i got a lot of data (%x/%x)",
+        fBID, total_bytes, fBufferSize);
 
   }while(ret != cvBusError);
 
-  // Now we have to concatenate all this data into a single continuous buffer
-  // because I'm too lazy to write a class that allows us to use fragmented
-  // buffers as if they were continuous
-  if(blt_words>0){
+  // copy from the digitizer's buffer into something we can send downstream
+  int words = total_bytes/sizeof(char32_t);
+  if(words>0){
     std::u32string s;
-    s.reserve(blt_words);
-    for (auto& xfer : xfer_buffers) {
-      s.append(xfer.first, xfer.second);
-    }
-    fBLTCounter[int(std::ceil(std::log2(blt_words)))]++;
+    s.reserve(words);
+    s.append((char32_t*)fROBuffer.data(), words);
+    fBLTCounter[int(std::ceil(std::log2(words)))]++;
     auto [ht, cc] = GetClockInfo(s);
     outptr = std::make_unique<data_packet>(std::move(s), ht, cc);
   }
-  for (auto b : xfer_buffers) delete[] b.first;
   fTotReadTime += duration_cast<nanoseconds>(high_resolution_clock::now()-t_start);
-  return blt_words;
+  return words;
 }
 
 int V1724::LoadDAC(std::vector<uint16_t>& dac_values){
