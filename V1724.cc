@@ -77,7 +77,7 @@ int V1724::Init(int link, int crate) {
 
   uint32_t word(0);
   int my_bid(0);
-  vROBuffer.assign(fBufferSize*2, 0); // double buffer for safety
+  fROBuffer.assign(fBufferSize*2, 0); // double buffer for safety
 
   if (Reset()) {
     fLog->Entry(MongoLog::Error, "Board %i unable to pre-load registers", fBID);
@@ -244,8 +244,8 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
 				     fBufferSize, cvA32_U_MBLT, cvD64, &nb);
     if( (ret != cvSuccess) && (ret != cvBusError) ){
       fLog->Entry(MongoLog::Error,
-		  "Board %i read error after %i reads: (%i) and transferred %i bytes this read",
-		  fBID, count, ret, nb);
+		  "Board %i read error %i, transferred %i bytes this read",
+		  fBID, ret, nb);
 
       // Delete all reserved data and fail
       return -1;
