@@ -217,7 +217,7 @@ class MongoConnect(object):
                     self.logger.debug(f'{n} seems to have been offline for a few days')
                     modes.append('none')
                     run_nums.append(-1)
-                    status_list.append(DAQ_STATUS.UNKNOWN)
+                    statuses['none'] = DAQ_STATUS.UNKNOWN
                     continue
                 phys_det = self.host_config[doc['host']]
                 status = self.extract_status(doc, now_time)
