@@ -194,7 +194,10 @@ class MongoConnect(object):
             status = None
             modes = []
             run_nums = []
-            for doc in self.latest_status[detector]['readers'].values():
+            for n, doc in self.latest_status[detector]['readers'].items():
+                if doc is None:
+                    self.logger.debug(f'{n} seems to have been offline for a few days')
+                    continue
                 phys_det = self.host_config[doc['host']]
                 try:
                     aggstat[phys_det]['rate'] += doc['rate']
@@ -209,7 +212,13 @@ class MongoConnect(object):
                 statuses[doc['host']] = status
                 phys_stat[phys_det].append(status)
 
-            for doc in self.latest_status[detector]['controller'].values():
+            for n, doc in self.latest_status[detector]['controller'].items():
+                if doc is None:
+                    self.logger.debug(f'{n} seems to have been offline for a few days')
+                    modes.append('none')
+                    run_nums.append(-1)
+                    status_list.append(DAQ_STATUS.UNKNOWN)
+                    continue
                 phys_det = self.host_config[doc['host']]
                 status = self.extract_status(doc, now_time)
                 statuses[doc['host']] = status
@@ -277,8 +286,8 @@ class MongoConnect(object):
         dt = t - int(str(doc['_id'])[:8], 16)
         has_ackd = self.host_ackd_command(host)
         ret = False
+        self.logger.debug(f'{host} last reported {int(dt)} sec ago')
         if dt > self.timeout:
-            self.logger.debug(f'{host} last reported {int(dt)} sec ago')
             ret = ret or True
         if has_ackd is not None and t - has_ackd > self.timeout_take_action:
             if host not in self.host_is_timeout:
@@ -341,7 +350,10 @@ class MongoConnect(object):
             return False
 
         # we don't need to pull the whole combined document because the 'detector' field is at the top level
-        detectors = self.collections['options'].find_one({'name': mode_a}, {'detector': 1})['detector']
+        if (doc := self.collections['options'].find_one({'name': mode_a}, {'detector': 1})) is not None:
+            detectors = doc['detector']
+        else:
+            detectors = None
 
         # Check if the linked detectors share the same run mode and
         # if they are both present in the detectors list of that mode
