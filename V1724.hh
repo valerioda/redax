@@ -76,11 +76,13 @@ protected:
   unsigned int fInputDelayChRegister;
   unsigned int fPreTrigRegister;
   unsigned int fPreTrigChRegister;
+  int fBufferSize;
 
   std::vector<int> fBLTalloc;
   std::map<int, int> fBLTCounter;
   std::vector<int> fDelayPerCh;
   std::vector<int> fPreTrigPerCh;
+  std::vector<uint8_t> fROBuffer;
 
   bool MonitorRegister(uint32_t reg, uint32_t mask, int ntries, int sleep, uint32_t val=1);
   virtual std::tuple<uint32_t, long> GetClockInfo(std::u32string_view);
