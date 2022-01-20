@@ -1,0 +1,33 @@
+{
+    "language": "eng", 
+    "title": "redax", 
+    "creators": [
+      {
+        "affiliation": "University of Freiburg", 
+        "name": "Darryl, M."
+      }, 
+      {
+        "affiliation": "University of Freiburg", 
+        "name": "Coderre, D."
+      }, 
+      {
+        "affiliation": "Nikhef", 
+        "name": "Angevaare, J.R."
+      }, 
+      {
+        "affiliation": "University of Freiburg", 
+        "name": "Elykov, A."
+      }, 
+      {
+        "affiliation": "Nikhef", 
+        "name": "Gaemers, P."
+      },
+      {
+        "affiliation": "Nikhef", 
+        "name": "Di Pede, S."
+      }, 
+
+    ], 
+    "access_right": "open", 
+    "description": "DAQ with noSQL backend"
+}
