@@ -7,10 +7,6 @@
         "name": "Masson, D."
       }, 
       {
-        "affiliation": "University of Freiburg", 
-        "name": "Coderre, D."
-      }, 
-      {
         "affiliation": "Nikhef", 
         "name": "Angevaare, J.R."
       }, 
@@ -26,8 +22,11 @@
         "affiliation": "Nikhef", 
         "name": "Di Pede, S."
       }, 
-
+      {
+        "affiliation": "University of Freiburg", 
+        "name": "Coderre, D."
+      }
     ], 
     "access_right": "open", 
-    "description": "DAQ with noSQL backend"
+    "description": "Distributed, parallel high-throughput data acquisition software for XENONnT"
 }
