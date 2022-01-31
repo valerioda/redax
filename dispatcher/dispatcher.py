@@ -80,8 +80,11 @@ def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, 
         commit = 'unknown'
     logger.info(f'Dispatcher starting on commit: {commit}')
 
+    last_loop_dt = 0
+
     while sh.event.is_set() == False:
-        sh.event.wait(sleep_period)
+        sh.event.wait(max(0, sleep_period - last_loop_dt))
+        t_start = time.time()
         # Get most recent goal state from database. Users will update this from the website.
         if (goal_state := mc.get_wanted_state()) is None:
             continue
@@ -106,6 +109,10 @@ def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, 
 
         # Decision time. Are we actually in our goal state? If not what should we do?
         dc.solve_problem(latest_status, goal_state)
+
+        mc.backup_aggstat()
+
+        last_loop_dt = time.time() - t_start
 
     mc.quit()
     return

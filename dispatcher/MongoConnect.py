@@ -3,6 +3,32 @@ from daqnt import DAQ_STATUS
 import threading
 import time
 import pytz
+import numpy as np
+
+
+def encode_for_numpy(doc):
+    if '_id' in doc:
+        del doc['_id']
+    mode_max_length = 32
+    t = (
+            doc['time'].isoformat().split('+')[0], # strip tz info
+            doc['detector'],
+            doc['number'],
+            doc['mode'][:mode_max_length].lower(),
+            doc['rate'],
+            doc['buff'],
+            doc['status'],
+            )
+    dtype = [
+            ('time', 'datetime64[us]'),
+            ('detector', 'U16'),
+            ('number', np.int32),
+            ('mode', f'U{mode_max_length}'),
+            ('rate', np.float32),
+            ('buff', np.float32),
+            ('status', np.int8)
+            ]
+    return t, dtype
 
 
 def _all(values, target):
@@ -114,6 +140,7 @@ class MongoConnect(object):
                 self.host_config[controller] = detector
                 self.hv_timeout_fix[controller] = now()
 
+        self.should_backup_aggstat = True
         self.logger = logger
         self.run = True
         self.event = threading.Event()
@@ -130,6 +157,32 @@ class MongoConnect(object):
 
     def __del__(self):
         self.quit()
+
+    def backup_aggstat(self):
+        """
+        Backs up the aggregate status collection by numpyizing it
+        """
+        today = now()
+        coll = self.collections['aggregate_status']
+        if today.day == 1 and self.should_backup_aggstat:
+            then = today - datetime.timedelta(days=31)
+            data = []
+            dtype = None
+            for doc in coll.find({'time': {'$lt': then.replace(tzinfo=None)}}):
+                row, dtype = encode_for_numpy(doc)
+                data.append(row)
+            try:
+                # TODO better place to store them?
+                with open('/daq_common2/logs/aggstat_{then.year}{then.month:02d}{then.day:02d}.npz', 'wb') as f:
+                    np.savez_compressed(f, data, dtype=dtype)
+            except Exception as e:
+                self.logger.error(f'Caught a {type(e)} while numpyizing aggstat: {e}')
+            else:
+                coll.delete_many({'time': {'$lt': then.replace(tzinfo=None)}})
+                self.should_backup_aggstat = False
+        else:
+            self.should_backup_aggstat = today.day != 1
+
 
     def get_update(self, dc):
         """
