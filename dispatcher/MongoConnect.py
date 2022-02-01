@@ -165,20 +165,23 @@ class MongoConnect(object):
         today = now()
         coll = self.collections['aggregate_status']
         if today.day == 1 and self.should_backup_aggstat:
-            then = today - datetime.timedelta(days=31)
+            then = (today - datetime.timedelta(days=31)).replace(tzinfo=None)
+            self.logger.info(f'Backing up aggregated status older than {then.isoformat()}')
             data = []
             dtype = None
-            for doc in coll.find({'time': {'$lt': then.replace(tzinfo=None)}}):
+            for doc in coll.find({'time': {'$lt': then}}):
                 row, dtype = encode_for_numpy(doc)
                 data.append(row)
             try:
+                data = np.array(data, dtype=dtype)
                 # TODO better place to store them?
-                with open('/daq_common2/logs/aggstat_{then.year}{then.month:02d}{then.day:02d}.npz', 'wb') as f:
-                    np.savez_compressed(f, data, dtype=dtype)
+                with open(f'/daq_common2/logs/aggstat_{then.year}{then.month:02d}{then.day:02d}.npz', 'wb') as f:
+                    np.savez_compressed(f, data=data)
             except Exception as e:
                 self.logger.error(f'Caught a {type(e)} while numpyizing aggstat: {e}')
             else:
-                coll.delete_many({'time': {'$lt': then.replace(tzinfo=None)}})
+                ret = coll.delete_many({'time': {'$lt': then}})
+                self.logger.debug(f'Backed up {ret.deleted_count} docs')
                 self.should_backup_aggstat = False
         else:
             self.should_backup_aggstat = today.day != 1
