@@ -237,8 +237,8 @@ int V1724::Read(std::unique_ptr<data_packet>& outptr){
   if ((status & 0x8) == 0) return 0;
   if (status & 0x10) {
     // we're busy, let's check which channel
-    std::string msg = "Board " + std::to_string(fBID) " is BUSY:";
-    for (int ch = 0; ch < fNChannels; ch++) {
+    std::string msg = "Board " + std::to_string(fBID) + " is BUSY:";
+    for (unsigned ch = 0; ch < fNChannels; ch++) {
       if (ReadRegister(fChStatusRegister + 0x100*ch) & 0x1) msg += " CH" + std::to_string(ch);
     }
     fLog->Entry(MongoLog::Local, msg);
