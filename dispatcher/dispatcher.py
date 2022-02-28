@@ -36,7 +36,7 @@ def setup():
     daq_config = json.loads(config['MasterDAQConfig'])
     control_mc = daqnt.get_client('daq')
     runs_mc = daqnt.get_client('runs')
-    logger = daqnt.get_daq_logger(config['LogName'], level=args.log, mc=control_mc, log_on_rotate=f'Commit {commit}')
+    logger = daqnt.get_daq_logger(config['LogName'], level=args.log, mc=control_mc, opening_message=f'Commit {commit}')
     vme_config = json.loads(config['VMEConfig'])
     if err is not None:
         logger.error(err)
