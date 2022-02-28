@@ -14,6 +14,15 @@ from hypervisor import Hypervisor
 
 def setup():
     # Parse command line
+    err = None
+    try:
+        commit = subprocess.run('git log -n 1 --pretty=oneline'.split(),
+                                capture_output=True
+                                ).stdout.decode().split(' ')[0]
+    except Exception as e:
+        err = f'Couldn\'t get commit hash: {type(e)}, {e}'
+        commit = 'unknown'
+
     parser = argparse.ArgumentParser(description='Manage the DAQ')
     parser.add_argument('--config', type=str, help='Path to your configuration file',
             default='config.ini')
@@ -27,8 +36,10 @@ def setup():
     daq_config = json.loads(config['MasterDAQConfig'])
     control_mc = daqnt.get_client('daq')
     runs_mc = daqnt.get_client('runs')
-    logger = daqnt.get_daq_logger(config['LogName'], level=args.log, mc=control_mc)
+    logger = daqnt.get_daq_logger(config['LogName'], level=args.log, mc=control_mc, log_on_rotate=f'Commit {commit}')
     vme_config = json.loads(config['VMEConfig'])
+    if err is not None:
+        logger.error(err)
 
     SlackBot = daqnt.DaqntBot(os.environ['SLACK_KEY'])
     while True:
@@ -70,15 +81,6 @@ def main(config, control_mc, logger, daq_config, vme_config, SlackBot, runs_mc, 
     hv.daq_controller = dc
 
     sleep_period = int(config['PollFrequency'])
-
-    try:
-        commit = subprocess.run('git log -n 1 --pretty=oneline'.split(),
-                                capture_output=True
-                                ).stdout.decode().split(' ')[0]
-    except Exception as e:
-        logger.debug(f'Couldn\'t get commit hash: {type(e)}, {e}')
-        commit = 'unknown'
-    logger.info(f'Dispatcher starting on commit: {commit}')
 
     last_loop_dt = 0
 
