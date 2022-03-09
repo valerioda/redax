@@ -14,7 +14,7 @@ def encode_for_numpy(doc):
             doc['time'].isoformat().split('+')[0], # strip tz info
             doc['detector'],
             doc['number'],
-            doc['mode'][:mode_max_length].lower(),
+            (doc['mode'] or '')[:mode_max_length].lower(),
             doc['rate'],
             doc['buff'],
             doc['status'],
@@ -170,8 +170,12 @@ class MongoConnect(object):
             data = []
             dtype = None
             for doc in coll.find({'time': {'$lt': then}}):
-                row, dtype = encode_for_numpy(doc)
-                data.append(row)
+                try:
+                    row, dtype = encode_for_numpy(doc)
+                    data.append(row)
+                except Exception as e:
+                    self.logger.debug(f'Error encoding {doc}')
+                    return
             try:
                 data = np.array(data, dtype=dtype)
                 # TODO better place to store them?
