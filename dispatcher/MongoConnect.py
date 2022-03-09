@@ -692,7 +692,7 @@ class MongoConnect(object):
         :param host: str, the process name to check
         :returns: float, the timestamp of the last unack'd command, or None if none exist
         """
-        q = {f'acknowledged.{host}': 0}
+        q = {'host': host, f'acknowledged.{host}': 0}
         sort = [('_id', 1)]
         if (doc := self.collections['outgoing_commands'].find_one(q, sort=sort)) is None:
             self.logger.debug(f'No unack\'d commands for {host}')
