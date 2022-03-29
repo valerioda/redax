@@ -14,7 +14,7 @@ def date_now():
 
 
 class Hypervisor(object):
-    __version__ = '4.0.2'
+    __version__ = '4.0.3'
     def __init__(self,
                  db,
                  logger,
@@ -67,7 +67,12 @@ class Hypervisor(object):
         :returns: None
         """
         command = "ssh " + address + ' ' + cmd
-        cp = subprocess.run(command, shell=True, capture_output=True)
+        try:
+            cp = subprocess.run(command, shell=True, capture_output=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            self.logger.error(f'Timeout while issuing command to {address}')
+            rets.append({'retcode': -1, 'stdout': '', 'stderr': ''})
+            return
         ret = {'retcode': cp.returncode,
                'stdout': cp.stdout.decode() if cp.stdout else '',
                'stderr': cp.stderr.decode() if cp.stderr else ''}
