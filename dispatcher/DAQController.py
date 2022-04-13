@@ -224,8 +224,6 @@ class DAQController():
             elif command == 'start':
                 readers, cc = self.mongo.get_hosts_for_mode(ls[detector]['mode'])
                 hosts = (readers, cc)
-                # we can safely short the logic here and buy an extra logic cycle
-                self.one_detector_arming = False
                 delay = self.start_cmd_delay
                 #Reset arming timeout counter 
                 self.missed_arm_cycles[detector]=0
@@ -236,9 +234,6 @@ class DAQController():
                     delay = 0
                 else:
                     delay = self.stop_cmd_delay
-                if ls[detector]['status'] in [DAQ_STATUS.ARMING, DAQ_STATUS.ARMED]:
-                    # this was the arming detector
-                    self.one_detector_arming = False
             self.logger.debug(f'Sending {command.upper()} to {detector}')
             if self.mongo.send_command(command, hosts, gs[detector]['user'],
                     detector, gs[detector]['mode'], delay, force):
