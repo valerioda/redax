@@ -281,7 +281,7 @@ Note that if there are any skipped channels (for instance, if you are using inpu
 
 ## Trigger thresholds
 
-Redax assigns trigger thresholds using a syntax identical to that of the channel map (above).
+Redax assigns trigger thresholds using a syntax identical to that of the channel map (above). The field is called `thresholds`.
 
 ## Lower-level diagnostic options
 
@@ -304,5 +304,6 @@ Redax accepts a variety of options that control various low-level operations. Th
 | baseline_dac_start | Int. The starting DAC value for the baseline fitting sequence. Closer to the final value is better, but too close might cause some issues. Default 10000. |
 | do_sn_check | 0/1. Whether or not to have each board check its serial number during initialization. Default 0. |
 | us_between_reads | Int. How many microseconds to sleep between polling digitizers for data. This has a major performance impact that will matter when under extremely high loads (ie, the bleeding edge of what your server(s) and boards are capable of), but otherwise shouldn't matter much. Default 10. |
-| transfer_batch | Int. After how many readout loops do you send accumulated data packets out for processing? Higher values mean less time waiting for mutexes, but too high could lead to problems at the processing stage. Default 8. |
+| transfer_batch | Int. After how many readout loops do you send accumulated data packets out for processing? Higher values mean less time waiting for mutexes, but too high could lead to problems at the processing stage, especially if rates are very low. Default 8. |
+| mv_time_offset | Int. A constant value to subtract from all timestamps recorded by V1724_MV boards. Default 2420. |
 
