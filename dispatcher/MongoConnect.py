@@ -46,6 +46,7 @@ class MongoConnect(object):
     D. Coderre, 12. Mar. 2019
     D. Masson, 2019-2021
     S. di Pede, 2020-2021
+    V. D'Andrea, Oct 2022
 
     Brief: This code handles the mongo connectivity for both the DAQ 
     databases (the ones used for system-wide communication) and the 
@@ -213,8 +214,8 @@ class MongoConnect(object):
         self.latest_status = dc
 
         # Now compute aggregate status
-        return self.latest_status if self.aggregate_status() is None else None
-
+        return self.latest_status if self.aggregate_status() else None
+    
     def clear_error_timeouts(self):
         self.error_sent = {}
 
@@ -236,17 +237,16 @@ class MongoConnect(object):
            apply to both
         """
         now_time = time.time()
-        ret = None
         aggstat = {
-                k:{ 'status': -1,
-                    'detector': k,
-                    'rate': 0,
-                    'time': now(),
-                    'buff': 0,
-                    'mode': None,
-                    'pll_unlocks': 0,
-                    'number': -1}
-                for k in self.dc}
+            k:{ 'status': -1,
+                'detector': k,
+                'rate': 0,
+                'time': now(),
+                'buff': 0,
+                'mode': None,
+                'pll_unlocks': 0,
+                'number': -1}
+            for k in self.dc}
         phys_stat = {k: [] for k in self.dc}
         for detector in self.latest_status.keys():
             # detector = logical
@@ -304,7 +304,7 @@ class MongoConnect(object):
             else:
                 status_list = list(statuses.values())
 
-            # Now we aggregate the statuses
+            # Now we aggregate the statuses for the logical detectors
             status = self.combine_statuses(status_list)
 
             self.latest_status[detector]['status'] = status
@@ -316,10 +316,16 @@ class MongoConnect(object):
         except Exception as e:
             self.logger.error(f'DB snafu? Couldn\'t update aggregate status. '
                             f'{type(e)}, {e}')
-
+            return None
         self.physical_status = phys_stat
-        return ret
 
+        # Aggregate status for the physical detectors
+        for log_det in self.latest_status.keys():
+            for det in self.latest_status[log_det]['detectors'].keys():
+                status = self.combine_statuses(phys_stat[det])
+                self.latest_status[log_det]['detectors'][det]['status'] = status
+        return True
+    
     def combine_statuses(self, status_list):
         # First, the "or" statuses
         for stat in ['ARMING','ERROR','TIMEOUT','UNKNOWN']:
@@ -425,9 +431,9 @@ class MongoConnect(object):
             self.logger.debug(f'{a} and {b} aren\'t link?? How this happen?? {mode_a} {detectors}')
             return False
 
-    def get_super_detector(self):
+    def get_logical_detector(self):
         """
-        Get the Super Detector configuration
+        Get the Logical Detector configuration
         if the detectors are in a compatible linked mode.
         - case A: tpc, mv and nv all linked
         - case B: tpc, mv and nv all un-linked
@@ -436,43 +442,56 @@ class MongoConnect(object):
         - case E: tpc unlinked, mv and nv linked
         We will check the compatibility of the linked mode for a pair of detectors per time.
         """
-        ret = {'tpc': {'controller': self.dc['tpc']['controller'][:],
-                       'readers': self.dc['tpc']['readers'][:],
-                       'detectors': ['tpc']}}
+
+        tpc = self.dc['tpc']
         mv = self.dc['muon_veto']
         nv = self.dc['neutron_veto']
+        
+        is_tpc_mv = self.is_linked('tpc', 'muon_veto')
+        is_tpc_nv = self.is_linked('tpc', 'neutron_veto')
+        is_mv_nv = self.is_linked('muon_veto', 'neutron_veto')
 
-        tpc_mv = self.is_linked('tpc', 'muon_veto')
-        tpc_nv = self.is_linked('tpc', 'neutron_veto')
-        mv_nv = self.is_linked('muon_veto', 'neutron_veto')
-
-        # tpc and muon_veto linked mode
-        if tpc_mv:
-            # case A or C
-            ret['tpc']['controller'] += mv['controller']
-            ret['tpc']['readers'] += mv['readers']
-            ret['tpc']['detectors'] += ['muon_veto']
-        else:
-            # case B or E
-            ret['muon_veto'] = {'controller': mv['controller'][:],
-                                'readers': mv['readers'][:],
-                                'detectors': ['muon_veto']}
-        if tpc_nv:
-            # case A or D
-            ret['tpc']['controller'] += nv['controller'][:]
-            ret['tpc']['readers'] += nv['readers'][:]
-            ret['tpc']['detectors'] += ['neutron_veto']
-        elif mv_nv and not tpc_mv:
+        if is_tpc_mv and is_tpc_nv and is_mv_nv:
+            # case A
+            ret = {'all_linked': {'controller': tpc['controller'][:] + mv['controller'][:] + nv['controller'][:],
+                                  'readers': tpc['readers'][:] + mv['readers'][:] + nv['readers'][:],
+                                  'detectors': ['tpc','muon_veto','neutron_veto']}}
+        elif is_tpc_mv and not is_tpc_nv and not is_mv_nv:
+            # case C
+            ret = {'tpc_mv': {'controller': tpc['controller'][:] + mv['controller'][:],
+                              'readers': tpc['readers'][:] + mv['readers'][:],
+                              'detectors': ['tpc','muon_veto']},
+                   'nv': {'controller': nv['controller'][:],
+                          'readers': nv['readers'][:],
+                          'detectors': ['neutron_veto']}}
+        elif is_tpc_nv and not is_tpc_mv and not is_mv_nv:
+            # case D
+            ret = {'tpc_nv': {'controller': tpc['controller'][:] + nv['controller'][:],
+                              'readers': tpc['readers'][:] + nv['readers'][:],
+                              'detectors': ['tpc','neutron_veto']},
+                   'mv': {'controller': mv['controller'][:],
+                           'readers': mv['readers'][:],
+                           'detectors': ['muon_veto']}}
+        elif is_mv_nv and not is_tpc_mv and not is_tpc_nv:
             # case E
-            ret['muon_veto']['controller'] += nv['controller'][:]
-            ret['muon_veto']['readers'] += nv['readers'][:]
-            ret['muon_veto']['detectors'] += ['neutron_veto']
+            ret = {'tpc': {'controller': tpc['controller'][:],
+                              'readers': tpc['readers'][:],
+                              'detectors': ['tpc']},
+                   'mv_nv': {'controller': mv['controller'][:] + nv['controller'][:],
+                              'readers': mv['readers'][:] + nv['readers'][:],
+                              'detectors': ['muon_veto','neutron_veto']}}
         else:
-            # case B or C
-            ret['neutron_veto'] = {'controller': nv['controller'][:],
-                                   'readers': nv['readers'][:],
-                                   'detectors': ['neutron_veto']}
-
+            # case B
+            ret = {'tpc': {'controller': tpc['controller'][:],
+                           'readers': tpc['readers'][:],
+                           'detectors': ['tpc']},
+                   'mv': {'controller': mv['controller'][:],
+                           'readers': mv['readers'][:],
+                           'detectors': ['muon_veto']},
+                   'nv': {'controller': nv['controller'][:],
+                           'readers': nv['readers'][:],
+                           'detectors': ['neutron_veto']}}
+        
         # convert the host lists to dics for later
         for det in list(ret.keys()):
             ret[det]['controller'] = {c:{} for c in ret[det]['controller']}

@@ -14,6 +14,7 @@ class DAQController():
     D. Coderre, 12. Mar. 2019
     D. Masson, 06 Apr 2020
     S. di Pede, 17 Mar 2021
+    V. D'Andrea, Oct 2022
 
     Brief: This code handles the logic of what the dispatcher does when. It takes in 
     aggregated status updates and commands from the mongo connector and decides if
@@ -87,37 +88,40 @@ class DAQController():
         self.latest_status = latest_status
         self.one_detector_arming = False
 
-        for det in latest_status.keys():
-            if latest_status[det]['status'] == DAQ_STATUS.IDLE:
+        for logical in latest_status.keys():
+            det = list(latest_status[logical]['detectors'].keys())[0]
+            if latest_status[logical]['status'] == DAQ_STATUS.IDLE:
                 self.can_force_stop[det] = True
                 self.error_stop_count[det] = 0
-            if latest_status[det]['status'] in [DAQ_STATUS.ARMING, DAQ_STATUS.ARMED]:
+            if latest_status[logical]['status'] in [DAQ_STATUS.ARMING, DAQ_STATUS.ARMED]:
                 self.one_detector_arming = True
 
         active_states = [DAQ_STATUS.RUNNING, DAQ_STATUS.ARMED, DAQ_STATUS.ARMING, DAQ_STATUS.UNKNOWN]
-
-        for det in latest_status.keys():
+        
+        for logical in latest_status.keys():
+            # Take the first physical detector, only one is needed to retrieve the goal status
+            det = list(latest_status[logical]['detectors'].keys())[0]
             # The detector should be INACTIVE
             if goal_state[det]['active'] == 'false':
                 # The detector is not in IDLE, ERROR or TIMEOUT: it needs to be stopped
-                if latest_status[det]['status'] in active_states:
+                if latest_status[logical]['status'] in active_states:
                     # Check before if the status is UNKNOWN and it is maybe timing out
-                    if latest_status[det]['status'] == DAQ_STATUS.UNKNOWN:
-                        self.logger.info(f"The status of {det} is unknown, check timeouts")
-                        self.check_timeouts(detector=det)
+                    if latest_status[logical]['status'] == DAQ_STATUS.UNKNOWN:
+                        self.logger.info(f"The status of {logical} is unknown, check timeouts")
+                        self.check_timeouts(detector=det) # TODO: CHECK LOGICAL OR PHYSICAL
                     # Otherwise stop the detector
                     else:
-                        self.logger.info(f"Sending stop command to {det}")
-                        self.stop_detector_gently(detector=det)
+                        self.logger.info(f"Sending stop command to {logical}")
+                        self.stop_detector_gently(detector=det) # TODO: CHECK LOGICAL OR PHYSICAL
                 # Deal separately with the TIMEOUT and ERROR statuses, by stopping the detector if needed
-                elif latest_status[det]['status'] == DAQ_STATUS.TIMEOUT:
-                    self.logger.info(f"The {det} is in timeout, check timeouts")
+                elif latest_status[logical]['status'] == DAQ_STATUS.TIMEOUT:
+                    self.logger.info(f"The {logical} is in timeout, check timeouts")
                     # TODO update
-                    self.handle_timeout(detector=det)
+                    self.handle_timeout(detector=det)  # TODO: CHECK LOGICAL OR PHYSICAL
 
-                elif latest_status[det]['status'] == DAQ_STATUS.ERROR:
-                   self.logger.info(f"The {det} has error, sending stop command")
-                   self.control_detector(command='stop', detector=det, force=self.can_force_stop[det])
+                elif latest_status[logical]['status'] == DAQ_STATUS.ERROR:
+                   self.logger.info(f"The {logical} has error, sending stop command")
+                   self.control_detector(logical, 'stop', force=self.can_force_stop[det])
                    self.can_force_stop[det]=False
                 else:
                     # the only remaining option is 'idle', which is fine
@@ -125,41 +129,39 @@ class DAQController():
 
             # The detector should be ACTIVE (RUNNING)
             else: #goal_state[det]['active'] == 'true':
-                if latest_status[det]['status'] == DAQ_STATUS.RUNNING:
-                    self.logger.info(f"The {det} is running")
+                if latest_status[logical]['status'] == DAQ_STATUS.RUNNING:
+                    self.logger.info(f"The {logical} is running")
                     self.check_run_turnover(detector=det)
                     # TODO does this work properly?
-                    if latest_status[det]['mode'] != goal_state[det]['mode']:
-                        self.control_detector(command='stop', detector=det)
+                    if latest_status[logical]['mode'] != goal_state[det]['mode']:
+                        self.control_detector(logical, 'stop')
                 # ARMED, start the run
-                elif latest_status[det]['status'] == DAQ_STATUS.ARMED:
-                    self.logger.info(f"The {det} is armed, sending start command")
-                    self.control_detector(command='start', detector=det)
+                elif latest_status[logical]['status'] == DAQ_STATUS.ARMED:
+                    self.logger.info(f"The {logical} is armed, sending start command")
+                    self.control_detector(logical,'start')
                 # ARMING, check if it is timing out
-                elif latest_status[det]['status'] == DAQ_STATUS.ARMING:
-                    self.logger.info(f"The {det} is arming, check timeouts")
-                    self.logger.debug(f"Checking the {det} timeouts")
-                    self.check_timeouts(detector=det, command='arm')
+                elif latest_status[logical]['status'] == DAQ_STATUS.ARMING:
+                    self.logger.info(f"The {logical} is arming, check timeouts")
+                    self.logger.debug(f"Checking the {logical} timeouts")
+                    self.check_timeouts(detector=det) # TODO: CHECK LOGICAL OR PHYSICAL
                 # UNKNOWN, check if it is timing out
-                elif latest_status[det]['status'] == DAQ_STATUS.UNKNOWN:
-                    self.logger.info(f"The status of {det} is unknown, check timeouts")
-                    self.logger.debug(f"Checking the {det} timeouts")
-                    self.check_timeouts(detector=det)
-
+                elif latest_status[logical]['status'] == DAQ_STATUS.UNKNOWN:
+                    self.logger.info(f"The status of {logical} is unknown, check timeouts")
+                    self.logger.debug(f"Checking the {logical} timeouts")
+                    self.check_timeouts(detector=det) # TODO: CHECK LOGICAL OR PHYSICAL
                 # Maybe the detector is IDLE, we should arm a run
-                elif latest_status[det]['status'] == DAQ_STATUS.IDLE:
-                    self.logger.info(f"The {det} is idle, sending arm command")
-                    self.control_detector(command='arm', detector=det)
-
+                elif latest_status[logical]['status'] == DAQ_STATUS.IDLE:
+                    self.logger.info(f"The {logical} is idle, sending arm command")
+                    self.control_detector(logical, 'arm')
                 # Deal separately with the TIMEOUT and ERROR statuses, by stopping the detector if needed
-                elif latest_status[det]['status'] == DAQ_STATUS.TIMEOUT:
-                    self.logger.info(f"The {det} is in timeout, check timeouts")
-                    self.logger.debug("Checking %s timeouts", det)
-                    self.handle_timeout(detector=det)
+                elif latest_status[logical]['status'] == DAQ_STATUS.TIMEOUT:
+                    self.logger.info(f"The {logical} is in timeout, check timeouts")
+                    self.logger.debug("Checking %s timeouts", logical)
+                    self.handle_timeout(detector=det) # TODO: CHECK LOGICAL OR PHYSICAL
 
-                elif latest_status[det]['status'] == DAQ_STATUS.ERROR:
-                    self.logger.info(f"The {det} has error, sending stop command")
-                    self.control_detector(command='stop', detector=det, force=self.can_force_stop[det])
+                elif latest_status[logical]['status'] == DAQ_STATUS.ERROR:
+                    self.logger.info(f"The {logical} has error, sending stop command")
+                    self.control_detector(logical,'stop', force=self.can_force_stop[det])
                     self.can_force_stop[det]=False
                 else:
                     # shouldn't be able to get here
@@ -190,22 +192,23 @@ class DAQController():
         else:
             self.control_detector(detector=detector, command='stop')
 
-    def control_detector(self, command, detector, force=False):
+    def control_detector(self, logical, command, force=False):
         """
         Issues the command to the detector if allowed by the timeout.
         Returns 0 if a command was issued and 1 otherwise
         """
         time_now = now()
+        det = list(self.latest_status[logical]['detectors'].keys())[0]
         try:
-            dt = (time_now - self.last_command[command][detector]).total_seconds()
+            dt = (time_now - self.last_command[command][det]).total_seconds()
         except (KeyError, TypeError):
             dt = 2*self.timeouts[command]
 
         # make sure we don't rush things
         if command == 'start':
-            dt_last = (time_now - self.last_command['arm'][detector]).total_seconds()
+            dt_last = (time_now - self.last_command['arm'][det]).total_seconds()
         elif command == 'arm':
-            dt_last = (time_now - self.last_command['stop'][detector]).total_seconds()
+            dt_last = (time_now - self.last_command['stop'][det]).total_seconds()
         else:
             dt_last = self.time_between_commands*2
 
@@ -214,43 +217,44 @@ class DAQController():
             gs = self.goal_state
             if command == 'arm':
                 if self.one_detector_arming:
-                    self.logger.info('Another detector already arming, can\'t arm %s' % detector)
+                    self.logger.info('Another detector already arming, can\'t arm %s' % logical)
                     # this leads to run number overlaps
                     return 1
-                readers, cc = self.mongo.get_hosts_for_mode(gs[detector]['mode'])
+                readers, cc = self.mongo.get_hosts_for_mode(gs[det]['mode'])
                 hosts = (cc, readers)
                 delay = 0
                 self.one_detector_arming = True
             elif command == 'start':
-                readers, cc = self.mongo.get_hosts_for_mode(ls[detector]['mode'])
+                readers, cc = self.mongo.get_hosts_for_mode(ls[logical]['mode'])
                 hosts = (readers, cc)
                 delay = self.start_cmd_delay
-                #Reset arming timeout counter 
-                self.missed_arm_cycles[detector]=0
+                #Reset arming timeout counter
+                for dd in self.latest_status[logical]['detectors'].keys():
+                    self.missed_arm_cycles[dd] = 0
             else: # stop
-                readers, cc = self.mongo.get_hosts_for_mode(ls[detector]['mode'], detector)
+                readers, cc = self.mongo.get_hosts_for_mode(ls[logical]['mode'], detector)
                 hosts = (cc, readers)
-                if force or ls[detector]['status'] not in [DAQ_STATUS.RUNNING]:
+                if force or ls[logical]['status'] not in [DAQ_STATUS.RUNNING]:
                     delay = 0
                 else:
                     delay = self.stop_cmd_delay
-            self.logger.debug(f'Sending {command.upper()} to {detector}')
-            if self.mongo.send_command(command, hosts, gs[detector]['user'],
-                    detector, gs[detector]['mode'], delay, force):
+            self.logger.debug(f'Sending {command.upper()} to {logical}')
+            if self.mongo.send_command(command, hosts, gs[det]['user'],
+                                       logical, gs[det]['mode'], delay, force):
                 # failed
                 return 1
-            self.last_command[command][detector] = time_now
-            if command == 'start' and self.mongo.insert_run_doc(detector):
+            self.last_command[command][det] = time_now
+            if command == 'start' and self.mongo.insert_run_doc(logical):
                 # db having a moment
                 return 0
-            if (command == 'stop' and ls[detector]['number'] != -1 and
-                    self.mongo.set_stop_time(ls[detector]['number'], detector, force)):
+            if (command == 'stop' and ls[logical]['number'] != -1 and
+                    self.mongo.set_stop_time(ls[logical]['number'], logical, force)):
                 # db having a moment
                 return 0
 
         else:
             self.logger.debug('Can\'t send %s to %s, timeout at %i/%i' % (
-                command, detector, dt, self.timeouts[command]))
+                command, logical, dt, self.timeouts[command]))
             return 1
         return 0
 
